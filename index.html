@@ -13,6 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet">
+<script>try{var d0=document.documentElement,s0=localStorage.getItem("ygl_style"),m0=localStorage.getItem("ygl_mode");if(!s0&&/iPhone|iPad|iPod/.test(navigator.userAgent))s0="glass";if(s0==="ios"||s0==="glass")d0.setAttribute("data-style","ios");if(s0==="glass")d0.setAttribute("data-glass","1");if(m0==="light"||m0==="dark")d0.setAttribute("data-theme",m0);}catch(e){}</script>
 <style>
 :root{
   box-sizing:border-box;
@@ -229,6 +230,70 @@ button,.cell{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
   .st-row{grid-template-columns:1fr 84px auto}
   .toast{bottom:calc(76px + env(safe-area-inset-bottom,0px))}
   .modal{padding-bottom:calc(22px + env(safe-area-inset-bottom,0px))}
+}
+/* ---------- iPhone style ---------- */
+:root[data-style=ios]{--bg:#F2F2F7;--panel:#FFFFFF;--panel2:#F2F2F7;--line:rgba(60,60,67,.18);--ink:#000000;--muted:rgba(60,60,67,.62);--free:#248A3D;--free-bg:rgba(52,199,89,.17);--use:#C25400;--use-bg:rgba(255,149,0,.19);--book:#5856D6;--book-bg:rgba(88,86,214,.14);--over:#D70015;--over-bg:rgba(255,59,48,.14);--done:rgba(60,60,67,.62);--done-bg:rgba(120,120,128,.14);--accent:#007AFF;--accent-ink:#FFFFFF;--shadow:none;color-scheme:light}
+@media (prefers-color-scheme:dark){:root[data-style=ios]:not([data-theme=light]){--bg:#000000;--panel:#1C1C1E;--panel2:#2C2C2E;--line:rgba(84,84,88,.6);--ink:#FFFFFF;--muted:rgba(235,235,245,.6);--free:#30D158;--free-bg:rgba(48,209,88,.2);--use:#FF9F0A;--use-bg:rgba(255,159,10,.2);--book:#7D7AFF;--book-bg:rgba(94,92,230,.26);--over:#FF453A;--over-bg:rgba(255,69,58,.2);--done:rgba(235,235,245,.6);--done-bg:rgba(118,118,128,.24);--accent:#0A84FF;--accent-ink:#FFFFFF;--shadow:none;color-scheme:dark}}
+:root[data-style=ios][data-theme=dark]{--bg:#000000;--panel:#1C1C1E;--panel2:#2C2C2E;--line:rgba(84,84,88,.6);--ink:#FFFFFF;--muted:rgba(235,235,245,.6);--free:#30D158;--free-bg:rgba(48,209,88,.2);--use:#FF9F0A;--use-bg:rgba(255,159,10,.2);--book:#7D7AFF;--book-bg:rgba(94,92,230,.26);--over:#FF453A;--over-bg:rgba(255,69,58,.2);--done:rgba(235,235,245,.6);--done-bg:rgba(118,118,128,.24);--accent:#0A84FF;--accent-ink:#FFFFFF;--shadow:none;color-scheme:dark}
+html[data-style=ios] body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+html[data-style=ios] h1,html[data-style=ios] h2,html[data-style=ios] h3,html[data-style=ios] .brand b,html[data-style=ios] .clock b,html[data-style=ios] .stat b,html[data-style=ios] .timer,html[data-style=ios] .total b,html[data-style=ios] .disp{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",system-ui,sans-serif;letter-spacing:-.02em}
+html[data-style=ios] .top{background:transparent}
+html[data-style=ios] .top::before,html[data-style=ios] body::before{background:var(--panel);background:color-mix(in srgb,var(--panel) 82%,transparent);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
+html[data-style=ios] .top::before{content:"";position:absolute;inset:0;z-index:-1}
+html[data-style=ios] .top{border-bottom:.5px solid var(--line)}
+html[data-style=ios] .brand b{color:var(--ink);font-weight:800}
+html[data-style=ios] .tab{font-weight:600;color:var(--muted)}
+html[data-style=ios] .tab[aria-selected=true]{color:var(--accent);background:transparent;border-bottom-color:var(--accent);border-top-color:transparent}
+html[data-style=ios] .card,html[data-style=ios] .stat,html[data-style=ios] .panel,html[data-style=ios] .scroll{border:0;border-radius:16px;box-shadow:none}
+html[data-style=ios] .card{padding:16px}
+html[data-style=ios] .card.free .card-h h3::after,html[data-style=ios] .card.active .card-h h3::after{content:none}
+html[data-style=ios] .timer{font-weight:700}
+html[data-style=ios] .bar{height:4px}
+html[data-style=ios] .btn{border:0;border-radius:12px;background:rgba(0,122,255,.12);background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);font-weight:600}
+html[data-style=ios] .btn:hover{border:0;filter:brightness(.97)}
+html[data-style=ios] .btn.primary{background:var(--accent);color:var(--accent-ink)}
+html[data-style=ios] .btn.danger{border:0;background:rgba(255,59,48,.12);background:color-mix(in srgb,var(--over) 14%,transparent);color:var(--over)}
+html[data-style=ios] .chips .btn[aria-pressed=true]{background:var(--accent);color:var(--accent-ink)}
+html[data-style=ios] .syncbtn{border:0;background:var(--panel2);color:var(--ink)}
+html[data-style=ios] input[type=text],html[data-style=ios] input[type=tel],html[data-style=ios] input[type=number],html[data-style=ios] input[type=date],html[data-style=ios] input[type=password],html[data-style=ios] select{border:0;border-radius:10px;background:var(--panel2)}
+html[data-style=ios] .banner{border:0;border-radius:12px}
+html[data-style=ios] .modal-bg{background:rgba(0,0,0,.4)}
+html[data-style=ios] .modal{border:0;border-radius:20px 20px 0 0}
+html[data-style=ios] .modal::before{content:"";display:block;width:36px;height:5px;border-radius:3px;background:var(--line);margin:-6px auto 12px}
+html[data-style=ios] .slots th,html[data-style=ios] .slots th.t,html[data-style=ios] .slots td.t,html[data-style=ios] .log th{background:var(--panel2)}
+@media (min-width:600px){html[data-style=ios] .modal{border-radius:20px}html[data-style=ios] .modal::before{display:none}}
+@media (max-width:700px){html[data-style=ios] .tabs{background:var(--panel);background:color-mix(in srgb,var(--panel) 85%,transparent);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-top:.5px solid var(--line)}html[data-style=ios] .tab{border-top:0;font-size:11px}html[data-style=ios] .tab[aria-selected=true]{border-top:0}}
+/* ---------- iPhone 26 glass ---------- */
+:root[data-style=ios][data-glass]:not([data-theme=dark]){--bg:#E9EEFB;--panel:rgba(255,255,255,.5);--panel2:rgba(255,255,255,.42);--sheet:rgba(247,249,255,.9);--line:rgba(255,255,255,.75);--sel:rgba(255,255,255,.72);--ink:#0E1220;--muted:rgba(14,18,32,.62);--glass-bg:radial-gradient(60% 40% at 12% 8%,#B7D3FF 0,transparent 70%),radial-gradient(50% 40% at 92% 22%,#F7C5EC 0,transparent 70%),radial-gradient(65% 45% at 65% 96%,#BFEFD9 0,transparent 70%),#E9EEFB;--glass-shadow:0 10px 30px rgba(40,60,140,.14)}
+@media (prefers-color-scheme:dark){:root[data-style=ios][data-glass]:not([data-theme=light]){--bg:#05060F;--panel:rgba(34,38,66,.46);--panel2:rgba(255,255,255,.09);--sheet:rgba(22,26,50,.92);--line:rgba(255,255,255,.16);--sel:rgba(255,255,255,.16);--ink:#FFFFFF;--muted:rgba(235,238,255,.65);--glass-bg:radial-gradient(60% 40% at 12% 8%,#1E3C92 0,transparent 70%),radial-gradient(50% 40% at 92% 22%,#6A2B92 0,transparent 70%),radial-gradient(65% 45% at 65% 96%,#0F6F70 0,transparent 70%),#05060F;--glass-shadow:0 10px 30px rgba(0,0,0,.35)}}
+:root[data-style=ios][data-glass][data-theme=dark]{--bg:#05060F;--panel:rgba(34,38,66,.46);--panel2:rgba(255,255,255,.09);--sheet:rgba(22,26,50,.92);--line:rgba(255,255,255,.16);--sel:rgba(255,255,255,.16);--ink:#FFFFFF;--muted:rgba(235,238,255,.65);--glass-bg:radial-gradient(60% 40% at 12% 8%,#1E3C92 0,transparent 70%),radial-gradient(50% 40% at 92% 22%,#6A2B92 0,transparent 70%),radial-gradient(65% 45% at 65% 96%,#0F6F70 0,transparent 70%),#05060F;--glass-shadow:0 10px 30px rgba(0,0,0,.35)}
+html[data-glass] body::after{content:"";position:fixed;inset:0;z-index:-1;background:var(--glass-bg)}
+html[data-glass] .card,html[data-glass] .stat,html[data-glass] .panel,html[data-glass] .scroll,html[data-glass] .banner{background:var(--panel);border:1px solid var(--line);-webkit-backdrop-filter:blur(24px) saturate(170%);backdrop-filter:blur(24px) saturate(170%);box-shadow:var(--glass-shadow),inset 0 1px 0 rgba(255,255,255,.5)}
+html[data-glass] .card{border-radius:28px}
+html[data-glass] .stat{border-radius:22px}
+html[data-glass] .panel{border-radius:24px}
+html[data-glass] .scroll{border-radius:22px}
+html[data-glass] .banner{border-radius:18px}
+html[data-glass] .card.over{background:color-mix(in srgb,var(--over) 24%,var(--panel))}
+html[data-glass] .top{border-bottom:1px solid var(--line)}
+html[data-glass] .top::before{-webkit-backdrop-filter:blur(28px) saturate(180%);backdrop-filter:blur(28px) saturate(180%)}
+html[data-glass] .syncbtn{background:var(--panel2);border:1px solid var(--line);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+html[data-glass] .btn{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:999px;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);box-shadow:inset 0 1px 0 rgba(255,255,255,.5)}
+html[data-glass] .btn.primary{background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 82%,white),var(--accent));color:#FFFFFF;border-color:rgba(255,255,255,.4);box-shadow:inset 0 1px 0 rgba(255,255,255,.55),0 6px 16px color-mix(in srgb,var(--accent) 35%,transparent)}
+html[data-glass] .btn.danger{background:var(--panel2);color:var(--over)}
+html[data-glass] .chips .btn[aria-pressed=true]{background:var(--accent);color:#FFFFFF}
+html[data-glass] input[type=text],html[data-glass] input[type=tel],html[data-glass] input[type=number],html[data-glass] input[type=date],html[data-glass] input[type=password],html[data-glass] select{background:var(--panel2);border:1px solid var(--line);border-radius:16px;color:var(--ink)}
+html[data-glass] .slots th,html[data-glass] .slots th.t,html[data-glass] .slots td.t,html[data-glass] .log th{background:var(--sheet)}
+html[data-glass] .modal-bg{background:rgba(10,15,40,.25);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+html[data-glass] .modal{background:var(--sheet);border:1px solid var(--line);-webkit-backdrop-filter:blur(30px) saturate(180%);backdrop-filter:blur(30px) saturate(180%);border-radius:30px;box-shadow:0 20px 50px rgba(10,15,50,.3),inset 0 1px 0 rgba(255,255,255,.5)}
+html[data-glass] .modal::before{display:none}
+@media (max-width:700px){
+  html[data-glass] .modal-bg{padding:0 8px calc(8px + env(safe-area-inset-bottom,0px))}
+  html[data-glass] .tabs{left:12px;right:12px;bottom:calc(10px + env(safe-area-inset-bottom,0px));padding:5px;gap:2px;border-radius:32px;border:1px solid var(--line);background:var(--panel);-webkit-backdrop-filter:blur(26px) saturate(180%);backdrop-filter:blur(26px) saturate(180%);box-shadow:0 12px 36px rgba(20,30,90,.25),inset 0 1px 0 rgba(255,255,255,.6)}
+  html[data-glass] .tab{border:0;border-radius:26px;min-height:48px;padding:8px 2px;color:var(--ink)}
+  html[data-glass] .tab[aria-selected=true]{background:var(--sel);color:var(--accent);box-shadow:inset 0 1px 0 rgba(255,255,255,.8),0 2px 10px rgba(20,30,90,.14)}
+  html[data-glass] main{padding-bottom:calc(112px + env(safe-area-inset-bottom,0px))}
+  html[data-glass] .toast{bottom:calc(92px + env(safe-area-inset-bottom,0px))}
 }
 </style>
 </head>
@@ -814,12 +879,12 @@ function syncModal(mode){
     (create?'<label class="f">Confirm password<input type="password" id="y-pass2" autocomplete="new-password"></label><label class="f">Sign-up code (only if your owner set one)<input type="text" id="y-code" autocapitalize="none" autocomplete="off"></label>':'')+
     '<div class="err" id="y-err"></div><div class="actions">'+
     (create?'<button class="btn" data-act="syncmode" data-p="login">I have an account</button><button class="btn primary" id="y-go">Create account</button>':'<button class="btn" data-act="syncmode" data-p="create">Create account</button><button class="btn primary" id="y-go">Log in</button>')+
-    '</div><div class="sub">Your records stay on this device and are copied to your cloud sheet once you sign in.</div></div>');
+    '</div><div class="sub">Your records stay on this device and are copied to your cloud sheet once you sign in.</div><div class="sub" style="text-align:right;opacity:.6">App version 11</div></div>');
   document.getElementById("y-go").addEventListener("click",function(){
     var err=document.getElementById("y-err"),go=document.getElementById("y-go"),uEl=document.getElementById("y-url");
     if(uEl){
-      var u=uEl.value.trim();
-      if(!/^https:\/\/\S+$/.test(u)){err.textContent="Enter the sync server address you copied. It starts with https://";return;}
+      var u=uEl.value.replace(/[\s\u200B-\u200F\u202A-\u202E\u2060\uFEFF]+/g,"");var um=u.match(/https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_\-]+\/(exec|dev)/i);if(um)u=um[0].replace(/^https/i,"https");uEl.value=u;
+      if(!/^https:\/\/\S+$/.test(u)){err.textContent="The address should look like https://script.google.com/macros/s/.../exec. Copy it again from the Deploy screen in Apps Script.";return;}
       if(/\/dev(\?.*)?$/.test(u)){err.textContent="That is the test address. Use the Web app URL that ends in /exec.";return;}
       sync.url=u;saveSyncState();
     }
@@ -857,8 +922,25 @@ function deleteLedger(id){
 }
 loadSyncState();
 document.getElementById("syncbtn").addEventListener("click",function(){syncModal();});
+function getStyle(){var s=lsGet("ygl_style");if(!s)s=/iPhone|iPad|iPod/.test(navigator.userAgent)?"glass":"standard";return (s==="ios"||s==="glass")?s:"standard";}
+function getMode(){var m=lsGet("ygl_mode");return (m==="light"||m==="dark")?m:"auto";}
+function applyLook(){
+  var d=document.documentElement;
+  if(getStyle()!=="standard")d.setAttribute("data-style","ios");else d.removeAttribute("data-style");
+  if(getStyle()==="glass")d.setAttribute("data-glass","1");else d.removeAttribute("data-glass");
+  var m=getMode();
+  if(m==="auto")d.removeAttribute("data-theme");else d.setAttribute("data-theme",m);
+  var tc=document.querySelector('meta[name="theme-color"]');
+  if(tc){var c=getComputedStyle(d).getPropertyValue(getStyle()==="standard"?"--accent":"--bg").trim();if(c)tc.setAttribute("content",c);}
+}
+view.addEventListener("change",function(e){
+  var t=e.target;
+  if(t&&t.id==="a-style"){lsSet("ygl_style",t.value);applyLook();}
+  else if(t&&t.id==="a-mode"){lsSet("ygl_mode",t.value);applyLook();}
+});
+applyLook();
 function renderSetup(){
-  var h=banner()+'<div class="setup"><div class="panel"><h2>Stations and rates</h2><div id="stlist">';
+  var h=banner()+'<div class="setup"><div class="panel"><h2>Appearance (this device)</h2><div class="fields"><label class="f">Style<select id="a-style"><option value="standard"'+(getStyle()==="standard"?" selected":"")+'>Standard</option><option value="ios"'+(getStyle()==="ios"?" selected":"")+'>iPhone style</option><option value="glass"'+(getStyle()==="glass"?" selected":"")+'>iPhone 26 (glass)</option></select></label><label class="f">Light or dark<select id="a-mode"><option value="auto"'+(getMode()==="auto"?" selected":"")+'>Follow my phone</option><option value="light"'+(getMode()==="light"?" selected":"")+'>Light</option><option value="dark"'+(getMode()==="dark"?" selected":"")+'>Dark</option></select></label></div><p class="hint">This only changes how the app looks on this device.</p></div><div class="panel"><h2>Stations and rates</h2><div id="stlist">';
   config.stations.forEach(function(st,i){
     h+='<div class="st-row"><input type="text" data-f="name" data-i="'+i+'" value="'+esc(st.name)+'" aria-label="Station name">'+
       '<input type="number" min="0" step="10" data-f="rate" data-i="'+i+'" value="'+st.rate+'" aria-label="Rate per hour">'+
