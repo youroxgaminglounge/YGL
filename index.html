@@ -108,6 +108,10 @@ main{max-width:1200px;margin:0 auto;padding:16px}
 .bar i{display:block;height:100%;background:var(--use);width:0}
 .card.over .bar i{background:var(--over)}
 .who{font-weight:600}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.chips .btn[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.entry{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--line)}
+.entry:last-child{border-bottom:0}
 .card.paused{border-left-color:var(--book)}
 .card.paused .timer{color:var(--book)}
 .card.paused .bar i{background:var(--book)}
@@ -183,8 +187,8 @@ button,.cell{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
   .brand .logo{width:40px;height:40px}
   .brand b{font-size:24px}
   .clock b{font-size:19px}
-  .tabs{position:fixed;left:0;right:0;bottom:0;z-index:25;display:grid;grid-template-columns:repeat(4,1fr);gap:0;padding:0 0 env(safe-area-inset-bottom,0px);background:var(--panel);border-top:1px solid var(--line);overflow:visible}
-  .tab{border-bottom:0;border-top:3px solid transparent;padding:14px 4px 12px;text-align:center;font-size:14px;min-height:56px}
+  .tabs{position:fixed;left:0;right:0;bottom:0;z-index:25;display:grid;grid-template-columns:repeat(5,1fr);gap:0;padding:0 0 env(safe-area-inset-bottom,0px);background:var(--panel);border-top:1px solid var(--line);overflow:visible}
+  .tab{border-bottom:0;border-top:3px solid transparent;padding:14px 2px 12px;text-align:center;font-size:13px;min-height:56px}
   .tab[aria-selected="true"]{border-top-color:var(--accent);background:var(--panel2)}
   .tab .lg{display:none}
   main{padding:12px 12px calc(84px + env(safe-area-inset-bottom,0px))}
@@ -230,6 +234,7 @@ button,.cell{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
     <button class="tab" role="tab" data-tab="floor">Floor</button>
     <button class="tab" role="tab" data-tab="slots">Slots</button>
     <button class="tab" role="tab" data-tab="log">Entry <span class="lg">&amp; exit </span>log</button>
+    <button class="tab" role="tab" data-tab="rev">Revenue</button>
     <button class="tab" role="tab" data-tab="setup">Setup</button>
   </nav>
 </header>
@@ -244,10 +249,10 @@ button,.cell{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 /* ---------- defaults & state ---------- */
 var DEFAULT_CONFIG = {
   stations:[
-    {id:"pc1",name:"PC 1",rate:100},{id:"pc2",name:"PC 2",rate:100},
-    {id:"pc3",name:"PC 3",rate:100},{id:"pc4",name:"PC 4",rate:100},
-    {id:"ps1",name:"PS5 Bay 1",rate:150},{id:"ps2",name:"PS5 Bay 2",rate:150},
-    {id:"sim",name:"Racing Sim",rate:250}
+    {id:"ps4a",name:"PS4 1",rate:100},{id:"ps4b",name:"PS4 2",rate:100},
+    {id:"ps4c",name:"PS4 3",rate:100},{id:"ps4p",name:"PS4 Pro",rate:120},
+    {id:"ps5",name:"PS5",rate:150},{id:"xbs",name:"Xbox Series S",rate:120},
+    {id:"proj",name:"Projector",rate:300}
   ],
   open:10, close:23, slotMin:60, minBillMin:30, roundMin:15, perPlayer:true, currency:"\u20B9"
 };
@@ -256,6 +261,10 @@ var sessions = {};            // id -> session
 var tab = "floor";
 var slotDate = dayStart(Date.now());
 var logDate = dayStart(Date.now());
+var ledger = {};
+var revPreset = "month";
+var revFrom = monthStart(Date.now());
+var revTo = dayStart(Date.now());
 var shared = false, db = null, downloads = null;
 var writeChain = {};          // id -> promise
 var memStore = {};
@@ -265,6 +274,7 @@ function clone(o){return JSON.parse(JSON.stringify(o));}
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
 function dayStart(ms){var d=new Date(ms);d.setHours(0,0,0,0);return d.getTime();}
 function pad(n){return n<10?"0"+n:""+n;}
+function monthStart(ms){var d=new Date(ms);d.setDate(1);d.setHours(0,0,0,0);return d.getTime();}
 function fmtTime(ms){var d=new Date(ms);var h=d.getHours(),m=d.getMinutes();var ap=h>=12?"PM":"AM";h=h%12||12;return h+":"+pad(m)+" "+ap;}
 function fmtHour(h){var ap=h>=12&&h<24?"PM":"AM";var x=h%12||12;return x+":00 "+ap;}
 function fmtDate(ms){return new Date(ms).toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short"});}
@@ -289,6 +299,16 @@ function saveSession(s){
   writeChain[s.id]=p;
   return p.catch(function(e){toast(writeErr(e));throw e;});
 }
+function saveLedger(e){
+  ledger[e.id]=e;
+  if(!shared){lsSet("ygl_ledger",JSON.stringify(ledger));return Promise.resolve();}
+  return db.doc("ledger/"+e.id).set(e).catch(function(err){toast(writeErr(err));throw err;});
+}
+function deleteLedger(id){
+  delete ledger[id];
+  if(!shared){lsSet("ygl_ledger",JSON.stringify(ledger));return Promise.resolve();}
+  return db.doc("ledger/"+id).delete().catch(function(err){toast(writeErr(err));throw err;});
+}
 function saveConfig(){
   if(!shared){lsSet("ygl_config",JSON.stringify(config));return Promise.resolve();}
   return db.doc("config/main").set(JSON.parse(JSON.stringify(config))).catch(function(e){toast(writeErr(e));throw e;});
@@ -308,7 +328,8 @@ async function initStore(){
       else config=clone(DEFAULT_CONFIG);
       refresh();
     },function(){});
-    var since=Date.now()-45*86400000;
+    db.collection("ledger").onSnapshot(function(snap){var m={};snap.docs.forEach(function(d){m[d.id]=JSON.parse(JSON.stringify(d.data()));});ledger=m;refresh();},function(){});
+    var since=Date.now()-800*86400000;
     db.collection("sessions").where("startAt",">=",since).onSnapshot(function(snap){
       var m={};snap.docs.forEach(function(d){m[d.id]=JSON.parse(JSON.stringify(d.data()));});
       sessions=m;refresh();
@@ -319,6 +340,7 @@ async function initStore(){
 function loadLocal(){
   try{var c=lsGet("ygl_config");if(c)config=Object.assign(clone(DEFAULT_CONFIG),JSON.parse(c));}catch(e){}
   try{var s=lsGet("ygl_sessions");if(s)sessions=JSON.parse(s);}catch(e){}
+  try{var l=lsGet("ygl_ledger");if(l)ledger=JSON.parse(l);}catch(e){}
 }
 
 /* ---------- domain logic ---------- */
@@ -557,6 +579,97 @@ function bindLogDate(){
   if(ld)ld.addEventListener("change",function(){if(ld.value){logDate=parseInputDate(ld.value);render();}});
 }
 
+function payKey(p){p=String(p||"Cash").toLowerCase();return p==="upi"?"upi":(p==="card"?"card":"cash");}
+function revenueByDay(from,to){
+  var days={};
+  function get(k){return days[k]||(days[k]={day:k,app:{cash:0,upi:0,card:0},man:{cash:0,upi:0,card:0}});}
+  list().forEach(function(s){
+    if(s.status!=="done")return;
+    var k=dayStart(s.checkOut||s.checkIn||s.startAt);
+    if(k<from||k>to)return;
+    get(k).app[payKey(s.pay)]+=(s.amount||0);
+  });
+  Object.keys(ledger).forEach(function(id){
+    var e=ledger[id],k=dayStart(e.date);
+    if(k<from||k>to)return;
+    var m=get(k).man;m.cash+=e.cash||0;m.upi+=e.upi||0;m.card+=e.card||0;
+  });
+  return Object.keys(days).map(function(k){return days[k];}).sort(function(a,b){return b.day-a.day;});
+}
+function setRevPreset(p){
+  var now=Date.now(),today=dayStart(now);revPreset=p;
+  if(p==="today"){revFrom=today;revTo=today;}
+  else if(p==="7"){revFrom=today-6*864e5;revTo=today;}
+  else if(p==="month"){revFrom=monthStart(now);revTo=today;}
+  else{revFrom=0;revTo=4e12;}
+}
+function renderRev(){
+  var days=revenueByDay(revFrom,revTo);
+  var tot={cash:0,upi:0,card:0},fromApp=0,added=0;
+  days.forEach(function(r){["cash","upi","card"].forEach(function(k){tot[k]+=r.app[k]+r.man[k];fromApp+=r.app[k];added+=r.man[k];});});
+  var grand=tot.cash+tot.upi+tot.card;
+  function chip(p,l){return '<button class="btn sm" data-act="rp" data-p="'+p+'" aria-pressed="'+(revPreset===p?"true":"false")+'">'+l+'</button>';}
+  var h=banner()+'<div class="bar-tools"><h2>Revenue</h2><button class="btn primary sm" data-act="addrev">+ Add previous day</button></div>'+
+    '<div class="chips">'+chip("today","Today")+chip("7","Last 7 days")+chip("month","This month")+chip("all","All time")+'</div>'+
+    '<div class="two" style="margin-bottom:14px"><label class="f">From<input type="date" id="rf" value="'+(revFrom?inputDate(revFrom):"")+'"></label><label class="f">To<input type="date" id="rt" value="'+(revTo<4e12?inputDate(revTo):"")+'"></label></div>'+
+    '<div class="summary">'+stat(money(grand),"total revenue")+stat(money(tot.cash),"cash")+stat(money(tot.upi),"UPI")+stat(money(tot.card),"card")+'</div>'+
+    '<div class="sub" style="margin:-6px 0 14px">'+money(fromApp)+' recorded in the app + '+money(added)+' added by hand, over '+days.length+(days.length===1?" day":" days")+'.</div>';
+  if(!days.length){h+='<div class="empty">No collections in this period yet.</div>';}
+  else{
+    h+='<div class="scroll"><table class="log"><thead><tr><th>Day</th><th>Cash</th><th>UPI</th><th>Card</th><th>Total</th><th>Source</th></tr></thead><tbody>';
+    days.forEach(function(r){
+      var c=r.app.cash+r.man.cash,u=r.app.upi+r.man.upi,d=r.app.card+r.man.card;
+      var a=r.app.cash+r.app.upi+r.app.card,m=r.man.cash+r.man.upi+r.man.card;
+      var src=a&&m?"App + added":(m?"Added":"App");
+      h+='<tr><td data-l="Day"><b>'+esc(fmtDate(r.day))+'</b></td><td class="num" data-l="Cash">'+money(c)+'</td><td class="num" data-l="UPI">'+money(u)+'</td><td class="num" data-l="Card">'+money(d)+'</td><td class="num" data-l="Total"><b>'+money(c+u+d)+'</b></td><td data-l="Source"><span class="chip '+(m?"booked":"done")+'">'+src+'</span></td></tr>';
+    });
+    h+='</tbody></table></div>';
+  }
+  var ents=Object.keys(ledger).map(function(k){return ledger[k];}).filter(function(e){var k=dayStart(e.date);return k>=revFrom&&k<=revTo;}).sort(function(a,b){return b.date-a.date;});
+  if(ents.length){
+    h+='<h3 style="margin:18px 0 8px">Added by hand</h3><div class="scroll">';
+    ents.forEach(function(e){
+      h+='<div class="entry"><div><b>'+esc(fmtDate(e.date))+'</b> <span class="sub">Cash '+money(e.cash||0)+(e.upi?', UPI '+money(e.upi):'')+(e.card?', Card '+money(e.card):'')+(e.note?' \u2022 '+esc(e.note):'')+'</span></div><div class="row" style="margin-top:0"><button class="btn sm" data-act="editrev" data-id="'+e.id+'">Edit</button><button class="btn danger sm" data-act="delrev" data-id="'+e.id+'">Delete</button></div></div>';
+    });
+    h+='</div>';
+  }
+  view.innerHTML=h;
+  var rf=document.getElementById("rf"),rt=document.getElementById("rt");
+  function rchange(){revFrom=rf.value?parseInputDate(rf.value):0;revTo=rt.value?parseInputDate(rt.value):4e12;revPreset="custom";render();}
+  rf.addEventListener("change",rchange);rt.addEventListener("change",rchange);
+}
+function revModal(id){
+  var e=id?ledger[id]:null;
+  var dt=e?e.date:dayStart(Date.now())-864e5;
+  function v(x){return x?x:"";}
+  openModal('<h2>'+(e?"Edit":"Add")+' previous collection</h2><div class="form">'+
+    '<label class="f">Date<input type="date" id="r-date" value="'+inputDate(dt)+'"></label>'+
+    '<div class="two"><label class="f">Cash<input type="number" id="r-cash" min="0" step="1" inputmode="decimal" placeholder="0" value="'+v(e&&e.cash)+'"></label>'+
+    '<label class="f">UPI<input type="number" id="r-upi" min="0" step="1" inputmode="decimal" placeholder="0" value="'+v(e&&e.upi)+'"></label></div>'+
+    '<div class="two"><label class="f">Card<input type="number" id="r-card" min="0" step="1" inputmode="decimal" placeholder="0" value="'+v(e&&e.card)+'"></label>'+
+    '<label class="f">Note (optional)<input type="text" id="r-note" maxlength="60" value="'+esc(e?e.note||"":"")+'"></label></div>'+
+    '<div class="sub" id="r-tot"></div>'+
+    '<div class="sub">Only add days that are not already recorded in this app, so they are not counted twice.</div>'+
+    '<div class="err" id="r-err"></div>'+
+    '<div class="actions"><button class="btn" data-act="mclose">Cancel</button><button class="btn primary" id="r-go">Save</button></div></div>');
+  function num(i){var x=parseFloat(document.getElementById(i).value);return isNaN(x)||x<0?0:Math.round(x);}
+  function upd(){document.getElementById("r-tot").textContent="Total for the day: "+money(num("r-cash")+num("r-upi")+num("r-card"));}
+  ["r-cash","r-upi","r-card"].forEach(function(i){document.getElementById(i).addEventListener("input",upd);});upd();
+  document.getElementById("r-go").addEventListener("click",function(){
+    var dv=document.getElementById("r-date").value;
+    if(!dv){document.getElementById("r-err").textContent="Pick the date.";return;}
+    var c=num("r-cash"),u=num("r-upi"),d=num("r-card");
+    if(c+u+d<=0){document.getElementById("r-err").textContent="Enter at least one amount.";return;}
+    var entry={id:e?e.id:"l"+uid(),date:dayStart(parseInputDate(dv)),cash:c,upi:u,card:d,note:document.getElementById("r-note").value.trim(),createdAt:e?e.createdAt:Date.now()};
+    saveLedger(entry).then(function(){toast("Collection saved.");}).catch(function(){});
+    closeModal();render();
+  });
+}
+function delRevModal(id){
+  var e=ledger[id];if(!e)return;
+  openModal('<h2>Delete this entry?</h2><div class="kv"><span>Date</span><b>'+esc(fmtDate(e.date))+'</b><span>Total</span><b>'+money((e.cash||0)+(e.upi||0)+(e.card||0))+'</b></div><div class="actions"><button class="btn" data-act="mclose">Keep it</button><button class="btn danger" id="d-go">Delete</button></div>');
+  document.getElementById("d-go").addEventListener("click",function(){deleteLedger(id).catch(function(){});closeModal();render();});
+}
 function renderSetup(){
   var h=banner()+'<div class="setup"><div class="panel"><h2>Stations and rates</h2><div id="stlist">';
   config.stations.forEach(function(st,i){
@@ -564,7 +677,7 @@ function renderSetup(){
       '<input type="number" min="0" step="10" data-f="rate" data-i="'+i+'" value="'+st.rate+'" aria-label="Rate per hour">'+
       '<button class="btn danger sm" data-act="rmst" data-i="'+i+'">Remove</button></div>';
   });
-  h+='</div><div class="actions" style="justify-content:flex-start"><button class="btn" data-act="addst">Add station</button></div>'+
+  h+='</div><div class="actions" style="justify-content:flex-start"><button class="btn" data-act="addst">Add station</button><button class="btn" data-act="ylgst">Use YGL station list</button></div>'+
     '<p class="hint">Rates are per hour. The rates above are placeholders, so set your own.</p></div>'+
     '<div class="panel"><h2>Timings and billing</h2><div class="fields">'+
     '<label class="f">Opens at<select id="c-open">'+hourOpts(config.open,0,23)+'</select></label>'+
@@ -583,7 +696,7 @@ function hourOpts(sel,a,b){var o="";for(var i=a;i<=b;i++)o+='<option value="'+i+
 function render(){
   var tabs=document.querySelectorAll(".tab");
   for(var i=0;i<tabs.length;i++)tabs[i].setAttribute("aria-selected",tabs[i].getAttribute("data-tab")===tab?"true":"false");
-  if(tab==="floor")renderFloor();else if(tab==="slots")renderSlots();else if(tab==="log")renderLog();else renderSetup();
+  if(tab==="floor")renderFloor();else if(tab==="slots")renderSlots();else if(tab==="log")renderLog();else if(tab==="rev")renderRev();else renderSetup();
 }
 function refresh(){
   var a=document.activeElement;
@@ -783,7 +896,12 @@ function onAct(e){
     case "lprev":logDate-=864e5;render();break;
     case "lnext":logDate+=864e5;render();break;
     case "ltoday":logDate=dayStart(Date.now());render();break;
+    case "rp":setRevPreset(el.getAttribute("data-p"));render();break;
+    case "addrev":revModal(null);break;
+    case "editrev":revModal(id);break;
+    case "delrev":delRevModal(id);break;
     case "csv":exportCsv();break;
+    case "ylgst":useYglStations();break;
     case "addst":readStations();config.stations.push({id:"st"+Date.now().toString(36),name:"New station",rate:100});render();break;
     case "rmst":removeStation(parseInt(el.getAttribute("data-i"),10));break;
     case "savecfg":saveSetup();break;
@@ -800,6 +918,14 @@ function readStations(){
     if(f==="name")config.stations[idx].name=ins[i].value.trim()||config.stations[idx].name;
     else config.stations[idx].rate=Math.max(0,parseFloat(ins[i].value)||0);
   }
+}
+function useYglStations(){
+  var busy=list().filter(function(s){return s.status==="active"||(s.status==="booked"&&s.endsAt>Date.now());});
+  if(busy.length){toast("Finish or cancel active and upcoming bookings first.");return;}
+  config.stations=clone(DEFAULT_CONFIG).stations;
+  setupMsg={t:"Saving\u2026",c:""};
+  saveConfig().then(function(){setupMsg={t:"Stations updated at "+fmtTime(Date.now())+". Now set your rates and tap Save setup.",c:"var(--free)"};if(tab==="setup")render();}).catch(function(e){setupMsg={t:"Not saved: "+((e&&(e.message||e.code))||"unknown error"),c:"var(--over)"};if(tab==="setup")render();});
+  render();
 }
 function removeStation(i){
   readStations();
