@@ -806,9 +806,9 @@ function syncModal(mode){
       '<div class="actions"><button class="btn danger sm" data-act="syncclear">Log out and clear this device</button><button class="btn" data-act="synclogout">Log out</button><button class="btn primary" data-act="syncnow">Sync now</button></div>');
     return;
   }
-  var create=mode==="create",needUrl=!SYNC_URL&&!sync.url;
+  var create=mode==="create",needUrl=!SYNC_URL;
   openModal('<h2>'+(create?"Create sync account":"Sign in to sync")+'</h2><div class="form">'+
-    (needUrl?'<label class="f">Sync server address<input type="text" id="y-url" autocapitalize="none" autocomplete="off" placeholder="https://script.google.com/macros/s/.../exec"></label>':'')+
+    (needUrl?'<label class="f">Sync server address<input type="text" id="y-url" autocapitalize="none" autocomplete="off" value="'+esc(sync.url)+'" placeholder="https://script.google.com/macros/s/.../exec"></label>':'')+
     '<label class="f">User ID<input type="text" id="y-user" autocapitalize="none" autocomplete="username" value="'+esc(sync.user)+'"></label>'+
     '<label class="f">Password<input type="password" id="y-pass" autocomplete="'+(create?"new-password":"current-password")+'"></label>'+
     (create?'<label class="f">Confirm password<input type="password" id="y-pass2" autocomplete="new-password"></label><label class="f">Sign-up code (only if your owner set one)<input type="text" id="y-code" autocapitalize="none" autocomplete="off"></label>':'')+
@@ -820,6 +820,7 @@ function syncModal(mode){
     if(uEl){
       var u=uEl.value.trim();
       if(!/^https:\/\/\S+$/.test(u)){err.textContent="Enter the sync server address you copied. It starts with https://";return;}
+      if(/\/dev(\?.*)?$/.test(u)){err.textContent="That is the test address. Use the Web app URL that ends in /exec.";return;}
       sync.url=u;saveSyncState();
     }
     var user=document.getElementById("y-user").value.trim().toLowerCase(),pass=document.getElementById("y-pass").value;
@@ -831,7 +832,7 @@ function syncModal(mode){
       closeModal();toast("Signed in. Sync is on.");
     }).catch(function(e){
       go.disabled=false;go.textContent=create?"Create account":"Log in";
-      err.textContent=(e&&e.message)||"Could not connect.";
+      var m=(e&&e.message)||"";err.textContent=/failed to fetch|networkerror|load failed/i.test(m)?"Could not reach the sync server. Check that the address ends in /exec, that it was deployed with access set to Anyone, and that you have internet.":(m||"Could not connect.");
     });
   });
 }
