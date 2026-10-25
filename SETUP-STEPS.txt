@@ -1,0 +1,75 @@
+YGL CLOUD SYNC AND CUSTOMER BOOKING - SETUP
+===========================================
+Staff sync lets every staff device that signs in with the same User ID and
+password see the same bookings, payments and revenue. Customer booking lets
+customers register with their mobile number, book slots on their own phones,
+and have those bookings appear in the staff app.
+Everything is stored in a Google Sheet that you own.
+
+Easiest on a computer. On a phone, open the Google pages in Chrome and turn on
+"Desktop site" from the Chrome menu.
+
+IF YOU ALREADY HAVE THE SERVER (update it)
+1. Open your Google Sheet > Extensions > Apps Script.
+2. Delete all the code, paste the full contents of the new Code.gs, press Save.
+3. Deploy > Manage deployments > pencil icon > Version: New version > Deploy.
+   The web app address stays the same. Do not create a new deployment.
+4. Do the TIME ZONE step below.
+Then go to PART 3 (customer booking).
+
+PART 1 - CREATE THE SERVER (first time only)
+1. Go to sheets.google.com and create a new blank spreadsheet. Name it "YGL Data".
+2. Menu: Extensions > Apps Script. A code editor opens.
+3. Select everything in the editor, delete it, then paste the full contents of
+   Code.gs from this folder. Press Save.
+4. Press Deploy > New deployment. Click the gear icon and choose "Web app".
+     Execute as: Me
+     Who has access: Anyone
+   Press Deploy.
+5. Press "Authorize access", choose your Google account. If Google says the app
+   is not verified, choose Advanced > "Go to project (unsafe)" and Allow.
+   (It is your own script, so this is expected.)
+6. Copy the "Web app URL" (it ends with /exec). Keep it private.
+
+TIME ZONE (important for customer booking)
+In Apps Script click the gear icon (Project settings) and set the Time zone to
+your lounge's time zone, for example (GMT+05:30) India Standard Time. The server
+uses it to check opening hours.
+
+PART 2 - STAFF SIGN-IN (every staff device)
+1. Open the YGL app. Tap "Sign in to sync" at the top.
+2. First device: tap "Create account", paste the Web app URL, choose a User ID and
+   password. Other devices: "Log in" with the same details.
+The FIRST account created is treated as the lounge owner. Customer bookings go into
+that account's data. To use a different staff account, set LOUNGE_USER at the top
+of Code.gs to its User ID.
+
+PART 3 - CUSTOMER BOOKING
+1. In the staff app open Setup > Online booking. Choose how many days ahead
+   customers can book, the minimum notice and the longest booking. Press Save setup.
+2. Tap "Copy link". This is your customer booking link. Share it on WhatsApp or
+   Instagram, or paste it into any free QR code maker and print the QR at the counter.
+3. Customers open the link, tap Register, enter their name, mobile number and a
+   4 to 6 digit PIN, choose a day, a station and a start time, and tap Book.
+   They can cancel their own upcoming bookings from the same page.
+4. Staff see the bookings automatically (after the app syncs, usually within seconds):
+   the Slots grid shows them as "Online", and the Floor shows them with the customer's
+   number when it is time to check in. The "Guests" tab lists every registered
+   customer with their number and number of bookings.
+
+GOOD TO KNOW
+- Two customers can never take the same slot: the server checks every booking.
+- A customer can hold up to 3 upcoming bookings (change CUSTOMER_MAX_UPCOMING in Code.gs).
+- Bookings are not paid online. Customers pay at the counter.
+- Mobile numbers are not verified by SMS. Check the number at the counter, and use the
+  Block button in the Guests tab for anyone who misuses online booking.
+- Switch online booking off any time: Setup > Online booking > "No, switched off".
+- Forgot-PIN for a customer: open the Customers tab of the Google Sheet and delete
+  that customer's row. They can register again with the same number.
+- Forgot-password for staff: delete that user's row in the Users tab and create the
+  account again with the same User ID. The data is kept in the d_<userid> tab.
+- If a customer's phone is on a different time zone from the lounge, slot times
+  they see may be off. Customers should be in the lounge's time zone.
+- Do not edit the d_ tabs by hand. You can read them and back them up.
+- The Google Play version of the app stores data only on the phone and has no sync
+  or customer booking.

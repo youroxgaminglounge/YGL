@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0F0D24">
+<title>Book a slot</title>
+<style>
+:root{
+  --bg:#0F0D24;--card:rgba(34,38,72,.62);--card2:rgba(255,255,255,.08);--line:rgba(255,255,255,.16);
+  --ink:#FFFFFF;--muted:rgba(235,238,255,.68);--accent:#7C6CFF;--accent2:#00D1FF;--ok:#30D158;--bad:#FF5A4F;--warn:#FFB340;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0}
+body{
+  min-height:100vh;color:var(--ink);background:var(--bg);
+  font:16px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,system-ui,sans-serif;
+  padding:env(safe-area-inset-top,0px) 0 calc(24px + env(safe-area-inset-bottom,0px));
+}
+body::before{content:"";position:fixed;inset:0;z-index:-1;
+  background:radial-gradient(60% 40% at 10% 5%,rgba(0,209,255,.35) 0,transparent 70%),radial-gradient(55% 40% at 95% 25%,rgba(255,45,175,.34) 0,transparent 70%),radial-gradient(60% 45% at 60% 98%,rgba(124,108,255,.38) 0,transparent 70%),#0F0D24}
+main{max-width:520px;margin:0 auto;padding:14px 16px}
+header{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+header img{width:48px;height:48px;border-radius:12px;object-fit:contain;background:rgba(0,0,0,.35)}
+header h1{font-size:20px;margin:0;line-height:1.15}
+header .sub{font-size:13px;color:var(--muted)}
+header .out{margin-left:auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:16px;margin-bottom:14px;
+  -webkit-backdrop-filter:blur(22px) saturate(170%);backdrop-filter:blur(22px) saturate(170%);box-shadow:0 10px 30px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.18)}
+h2{font-size:17px;margin:0 0 10px}
+label{display:block;font-size:13px;color:var(--muted);font-weight:600;margin-top:12px}
+input,select{width:100%;margin-top:5px;min-height:46px;border-radius:14px;border:1px solid var(--line);background:var(--card2);color:var(--ink);padding:10px 14px;font:inherit}
+input::placeholder{color:rgba(235,238,255,.4)}
+select option{color:#000}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:46px;padding:10px 18px;border-radius:999px;border:1px solid var(--line);background:var(--card2);color:var(--ink);font:inherit;font-weight:700;cursor:pointer}
+.btn.primary{background:linear-gradient(90deg,var(--accent),var(--accent2));border-color:rgba(255,255,255,.3);color:#06101C;box-shadow:0 6px 18px rgba(0,209,255,.28)}
+.btn.sm{min-height:36px;padding:6px 14px;font-size:14px}
+.btn.danger{color:var(--bad)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.block{width:100%;margin-top:14px}
+.tabs{display:flex;gap:8px;margin-bottom:6px}
+.tabs .btn{flex:1}
+.tabs .btn[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:#fff}
+.chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin:0 -2px}
+.chip{flex:none;min-width:64px;text-align:center;padding:8px 10px;border-radius:16px;border:1px solid var(--line);background:var(--card2);color:var(--ink);font:inherit;cursor:pointer}
+.chip b{display:block;font-size:17px}
+.chip span{font-size:12px;color:var(--muted)}
+.chip[aria-pressed=true]{background:var(--accent);border-color:var(--accent)}
+.chip[aria-pressed=true] span{color:#fff}
+.stations{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.st{padding:10px 12px;border-radius:16px;border:1px solid var(--line);background:var(--card2);color:var(--ink);text-align:left;font:inherit;cursor:pointer}
+.st b{display:block}
+.st span{font-size:13px;color:var(--muted)}
+.st[aria-pressed=true]{border-color:var(--accent2);box-shadow:0 0 0 2px rgba(0,209,255,.35)}
+.slots{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.slot{min-height:44px;border-radius:14px;border:1px solid var(--line);background:var(--card2);color:var(--ink);font:inherit;font-weight:600;cursor:pointer}
+.slot:disabled{opacity:.3;text-decoration:line-through;cursor:not-allowed}
+.slot[aria-pressed=true]{background:var(--accent);border-color:var(--accent)}
+.row{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.muted{color:var(--muted);font-size:14px}
+.err{color:var(--bad);font-size:14px;min-height:20px;margin-top:8px}
+.ok{color:var(--ok)}
+.pill{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:700;background:rgba(124,108,255,.28)}
+.pill.cancelled{background:rgba(255,255,255,.12);color:var(--muted)}
+.pill.active{background:rgba(255,179,64,.25);color:var(--warn)}
+.bk{padding:12px 0;border-top:1px solid var(--line)}
+.bk:first-of-type{border-top:0}
+.total{font-size:22px;font-weight:800}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:#fff;color:#111;padding:12px 18px;border-radius:14px;font-weight:600;z-index:10;max-width:90vw;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.on{opacity:1}
+.done{text-align:center}
+.done .big{font-size:42px}
+</style>
+</head>
+<body>
+<main id="app"><div class="card"><p class="muted">Loading&hellip;</p></div></main>
+<div class="toast" id="toast" role="status"></div>
+<script>
+(function(){
+"use strict";
+var memStore={};
+function lsGet(k){try{var v=localStorage.getItem(k);return v==null?memStore[k]:v;}catch(e){return memStore[k];}}
+function lsSet(k,v){memStore[k]=v;try{localStorage.setItem(k,v);}catch(e){}}
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+var app=document.getElementById("app"),toastEl=document.getElementById("toast"),toastT;
+function toast(m){toastEl.textContent=m;toastEl.classList.add("on");clearTimeout(toastT);toastT=setTimeout(function(){toastEl.classList.remove("on");},3200);}
+
+var qs=new URLSearchParams(location.search);
+var server=(qs.get("s")||"").replace(/\s+/g,"")||lsGet("ygl_book_server")||"";
+if(qs.get("s"))lsSet("ygl_book_server",server);
+
+var info=null,skew=0,auth=null,mode="login",day=0,stationId="",busy=[],selStart=0,bookings=[],done=null,loading=true,fatal="";
+try{auth=JSON.parse(lsGet("ygl_book_auth")||"null");}catch(e){auth=null;}
+
+function nowMs(){return Date.now()+skew;}
+function dayStart(ms){var d=new Date(ms);d.setHours(0,0,0,0);return d.getTime();}
+function fmtT(ms){return new Date(ms).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});}
+function fmtD(ms){return new Date(ms).toLocaleDateString([],{weekday:"short",day:"numeric",month:"short"});}
+function money(n){return (info.currency||"")+Math.round(n).toLocaleString();}
+function dur(min){var h=Math.floor(min/60),m=min%60;return h?(h+"h"+(m?" "+m+"m":"")):(m+"m");}
+function stationBy(id){var r=null;info.stations.forEach(function(s){if(s.id===id)r=s;});return r;}
+
+function post(p){
+  if(!server)return Promise.reject(new Error("noserver"));
+  var ctl=typeof AbortController!=="undefined"?new AbortController():null,t=ctl?setTimeout(function(){ctl.abort();},25000):0;
+  return fetch(server,{method:"POST",body:JSON.stringify(p),signal:ctl?ctl.signal:undefined}).then(function(r){clearTimeout(t);if(!r.ok)throw new Error("Server error "+r.status);return r.json();})
+   .catch(function(e){clearTimeout(t);throw new Error(e&&e.name==="AbortError"?"Timed out":((e&&e.message)||"offline"));});
+}
+function netMsg(e){var m=(e&&e.message)||"";return /failed to fetch|networkerror|load failed|timed out|offline/i.test(m)?"Could not reach the lounge. Check your internet and try again.":m;}
+
+function loadInfo(){
+  return post({action:"c_info"}).then(function(r){
+    if(!r.ok){fatal=r.error||"Booking is not available right now.";return;}
+    info=r;skew=r.now-Date.now();fatal="";
+    if(!stationId)stationId=info.stations[0].id;
+    if(!day)day=dayStart(nowMs());
+  });
+}
+function loadBusy(){
+  if(!info||!auth)return Promise.resolve();
+  return post({action:"c_avail",from:day,to:day+86400000}).then(function(r){if(r.ok){busy=r.busy||[];skew=r.now-Date.now();}});
+}
+function loadMine(){
+  if(!auth)return Promise.resolve();
+  return post({action:"c_my",phone:auth.phone,token:auth.token}).then(function(r){
+    if(r.auth){logoutLocal();return;}
+    if(r.ok)bookings=r.bookings||[];
+  });
+}
+function logoutLocal(){auth=null;lsSet("ygl_book_auth","null");bookings=[];selStart=0;done=null;render();}
+
+function setAuth(r){auth={phone:r.phone,token:r.token,name:r.name};lsSet("ygl_book_auth",JSON.stringify(auth));}
+
+/* ---------- views ---------- */
+function header(){
+  var lounge=info&&info.lounge?info.lounge:"Book a slot";
+  return '<header><img src="icon-192.png" alt="" onerror="this.style.display=\'none\'"><div><h1>'+esc(lounge)+'</h1><div class="sub">Book your gaming slot</div></div>'+
+    (auth?'<button class="btn sm out" id="logout">Log out</button>':'')+'</header>';
+}
+function render(){
+  if(loading){app.innerHTML='<div class="card"><p class="muted">Loading&hellip;</p></div>';return;}
+  if(!server){app.innerHTML='<div class="card"><h2>Booking link needed</h2><p class="muted">Please open the booking link or scan the QR code given by the lounge.</p></div>';return;}
+  if(fatal){app.innerHTML=header()+'<div class="card"><h2>Booking unavailable</h2><p class="muted">'+esc(fatal)+'</p><button class="btn block" id="retry">Try again</button></div>';bind();return;}
+  if(!info.on){app.innerHTML=header()+'<div class="card"><h2>Online booking is off</h2><p class="muted">Please visit the lounge to book a slot.</p></div>';return;}
+  if(!auth){app.innerHTML=header()+authCard();bind();return;}
+  app.innerHTML=header()+(done?doneCard():'')+bookCard()+mineCard();
+  bind();
+}
+function authCard(){
+  var reg=mode==="register";
+  return '<div class="card"><div class="tabs"><button class="btn" data-mode="login" aria-pressed="'+(!reg)+'">Log in</button><button class="btn" data-mode="register" aria-pressed="'+reg+'">Register</button></div>'+
+    (reg?'<label>Your name<input id="f-name" autocomplete="name" maxlength="40" placeholder="e.g. Ravi Kumar"></label>':'')+
+    '<label>Mobile number<input id="f-phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="e.g. 98765 43210"></label>'+
+    '<label>PIN (4 to 6 digits)<input id="f-pin" type="password" inputmode="numeric" maxlength="6" autocomplete="'+(reg?"new-password":"current-password")+'" placeholder="Choose a PIN you will remember"></label>'+
+    '<div class="err" id="f-err"></div>'+
+    '<button class="btn primary block" id="f-go">'+(reg?"Register and continue":"Log in")+'</button>'+
+    '<p class="muted" style="margin-top:12px">'+(reg?"Your number is used only by this lounge for your bookings.":"New here? Tap Register. Forgot your PIN? Ask the lounge to reset it.")+'</p></div>';
+}
+function dayChips(){
+  var h='<div class="chips">';
+  for(var i=0;i<=info.days;i++){
+    var d=dayStart(dayStart(nowMs())+i*86400000+43200000);
+    h+='<button class="chip" data-day="'+d+'" aria-pressed="'+(d===day)+'"><b>'+new Date(d).getDate()+'</b><span>'+(i===0?"Today":new Date(d).toLocaleDateString([],{weekday:"short"}))+'</span></button>';
+  }
+  return h+'</div>';
+}
+function slotFree(t){
+  var now=nowMs();
+  if(t<now+info.notice*60000||t>now+info.days*86400000)return false;
+  var end=t+info.slotMin*60000;
+  for(var i=0;i<busy.length;i++){var b=busy[i];if(b.s===stationId&&b.a<end&&b.b>t)return false;}
+  return true;
+}
+function maxLens(t){
+  var out=[],close=day+info.close*3600000;
+  for(var k=1;;k++){
+    var len=k*info.slotMin,end=t+len*60000;
+    if(len>info.max||end>close)break;
+    var clash=false;for(var i=0;i<busy.length;i++){var b=busy[i];if(b.s===stationId&&b.a<end&&b.b>t){clash=true;break;}}
+    if(clash)break;out.push(len);
+  }
+  return out;
+}
+function bookCard(){
+  var st=stationBy(stationId);
+  var h='<div class="card"><h2>Book a slot</h2>'+dayChips()+'<label style="margin-top:6px">Choose a station</label><div class="stations">';
+  info.stations.forEach(function(s){h+='<button class="st" data-st="'+esc(s.id)+'" aria-pressed="'+(s.id===stationId)+'"><b>'+esc(s.name)+'</b><span>'+money(s.rate)+' per hour</span></button>';});
+  h+='</div><label>Start time</label><div class="slots">';
+  var any=false;
+  for(var t=day+info.open*3600000;t+info.slotMin*60000<=day+info.close*3600000;t+=info.slotMin*60000){
+    var free=slotFree(t);if(free)any=true;
+    h+='<button class="slot" data-t="'+t+'"'+(free?'':' disabled')+' aria-pressed="'+(t===selStart)+'">'+fmtT(t)+'</button>';
+  }
+  h+='</div>'+(any?'':'<p class="muted" style="margin-top:10px">No free slots on this day for this station. Try another day or station.</p>');
+  if(selStart){
+    var lens=maxLens(selStart);
+    if(!lens.length){h+='<p class="muted">That slot just became unavailable.</p>';}
+    else{
+      h+='<label>How long</label><select id="b-len">'+lens.map(function(l){return '<option value="'+l+'">'+dur(l)+'</option>';}).join("")+'</select>'+
+        '<label>Players</label><select id="b-pl">'+[1,2,3,4,5,6].map(function(n){return '<option value="'+n+'">'+n+'</option>';}).join("")+'</select>'+
+        '<div class="row" style="margin-top:12px"><span class="muted">Estimated price</span><span class="total" id="b-est"></span></div>'+
+        '<div class="err" id="b-err"></div><button class="btn primary block" id="b-go">Book '+esc(st.name)+' at '+fmtT(selStart)+'</button>'+
+        '<p class="muted" style="margin-top:10px">Pay at the counter. Please arrive on time.</p>';
+    }
+  }
+  return h+'</div>';
+}
+function mineCard(){
+  var h='<div class="card"><h2>My bookings</h2>';
+  var list=bookings.filter(function(b){return b.status!=="cancelled"||b.endsAt>nowMs()-86400000;});
+  if(!list.length)return h+'<p class="muted">You have no bookings yet.</p></div>';
+  list.forEach(function(b){
+    var s=stationBy(b.stationId),can=b.status==="booked"&&b.startAt>nowMs();
+    h+='<div class="bk"><div class="row"><div><b>'+esc(s?s.name:"Station")+'</b><div class="muted">'+fmtD(b.startAt)+', '+fmtT(b.startAt)+' to '+fmtT(b.endsAt)+' &bull; '+b.players+(b.players>1?' players':' player')+'</div></div><span class="pill '+esc(b.status)+'">'+({booked:"Booked",active:"Playing",cancelled:"Cancelled"}[b.status]||esc(b.status))+'</span></div>'+
+      (can?'<button class="btn sm danger" style="margin-top:8px" data-cancel="'+esc(b.id)+'">Cancel booking</button>':'')+'</div>';
+  });
+  return h+'</div>';
+}
+function doneCard(){
+  var s=stationBy(done.stationId);
+  return '<div class="card done"><div class="big">&#127918;</div><h2>You are booked!</h2><p><b>'+esc(s?s.name:"")+'</b><br>'+fmtD(done.startAt)+', '+fmtT(done.startAt)+' to '+fmtT(done.endsAt)+'</p><p class="muted">Show your name and mobile number at the counter. Pay there.</p><button class="btn sm" id="done-ok">OK</button></div>';
+}
+
+/* ---------- events ---------- */
+function $(id){return document.getElementById(id);}
+function bind(){
+  var q=function(sel,fn){var els=app.querySelectorAll(sel);for(var i=0;i<els.length;i++)(function(el){el.addEventListener("click",function(){fn(el);});})(els[i]);};
+  q("#retry",function(){loading=true;render();start();});
+  q("#logout",function(){if(auth)post({action:"c_logout",phone:auth.phone,token:auth.token}).catch(function(){});logoutLocal();});
+  q("[data-mode]",function(el){mode=el.getAttribute("data-mode");render();});
+  if($("f-go"))$("f-go").addEventListener("click",doAuth);
+  q("[data-day]",function(el){day=parseInt(el.getAttribute("data-day"),10);selStart=0;done=null;loadBusy().then(render).catch(function(e){toast(netMsg(e));});});
+  q("[data-st]",function(el){stationId=el.getAttribute("data-st");selStart=0;render();});
+  q("[data-t]",function(el){selStart=parseInt(el.getAttribute("data-t"),10);render();var g=$("b-go");if(g&&g.scrollIntoView)g.scrollIntoView({behavior:"smooth",block:"center"});});
+  q("[data-cancel]",function(el){cancelBooking(el.getAttribute("data-cancel"));});
+  q("#done-ok",function(){done=null;render();});
+  var len=$("b-len"),pl=$("b-pl");
+  function est(){var e=$("b-est");if(!e||!len)return;var st=stationBy(stationId),n=info.perPlayer?parseInt(pl.value,10):1;e.textContent=money(st.rate*parseInt(len.value,10)/60*n);}
+  if(len){len.addEventListener("change",est);pl.addEventListener("change",est);est();}
+  if($("b-go"))$("b-go").addEventListener("click",doBook);
+}
+function doAuth(){
+  var reg=mode==="register",err=$("f-err"),go=$("f-go");
+  var phone=$("f-phone").value.trim(),pin=$("f-pin").value.trim(),name=reg?$("f-name").value.trim():"";
+  if(reg&&name.length<2){err.textContent="Please enter your name.";return;}
+  if(phone.replace(/\D/g,"").length<7){err.textContent="Please enter a valid mobile number.";return;}
+  if(!/^\d{4,6}$/.test(pin)){err.textContent="PIN must be 4 to 6 digits.";return;}
+  err.textContent="";go.disabled=true;go.textContent="Please wait\u2026";
+  post(reg?{action:"c_register",name:name,phone:phone,pin:pin}:{action:"c_login",phone:phone,pin:pin}).then(function(r){
+    if(!r.ok){go.disabled=false;go.textContent=reg?"Register and continue":"Log in";err.textContent=r.error||"Something went wrong.";return;}
+    setAuth(r);return Promise.all([loadBusy(),loadMine()]).then(function(){render();toast("Welcome, "+r.name+"!");});
+  }).catch(function(e){go.disabled=false;go.textContent=reg?"Register and continue":"Log in";err.textContent=netMsg(e);});
+}
+function doBook(){
+  var err=$("b-err"),go=$("b-go"),len=parseInt($("b-len").value,10),pl=parseInt($("b-pl").value,10);
+  err.textContent="";go.disabled=true;go.textContent="Booking\u2026";
+  post({action:"c_book",phone:auth.phone,token:auth.token,stationId:stationId,start:selStart,end:selStart+len*60000,players:pl}).then(function(r){
+    if(r.auth){toast("Please log in again.");logoutLocal();return;}
+    if(!r.ok){go.disabled=false;go.textContent="Book";err.textContent=r.error||"Could not book.";if(r.taken){selStart=0;return loadBusy().then(render);}return;}
+    done=r.booking;selStart=0;return Promise.all([loadBusy(),loadMine()]).then(function(){render();window.scrollTo(0,0);});
+  }).catch(function(e){go.disabled=false;go.textContent="Book";err.textContent=netMsg(e);});
+}
+function cancelBooking(id){
+  if(!confirm("Cancel this booking?"))return;
+  post({action:"c_cancel",phone:auth.phone,token:auth.token,id:id}).then(function(r){
+    if(r.auth){logoutLocal();return;}
+    toast(r.ok?"Booking cancelled.":(r.error||"Could not cancel."));
+    return Promise.all([loadBusy(),loadMine()]).then(render);
+  }).catch(function(e){toast(netMsg(e));});
+}
+function start(){
+  if(!server){loading=false;render();return;}
+  loadInfo().then(function(){return info?Promise.all([loadBusy(),loadMine()]):null;}).then(function(){loading=false;render();})
+   .catch(function(e){loading=false;fatal=netMsg(e);render();});
+}
+setInterval(function(){if(auth&&info&&!document.hidden&&!selStart&&!done){Promise.all([loadBusy(),loadMine()]).then(render).catch(function(){});}},60000);
+start();
+})();
+</script>
+</body>
+</html>
