@@ -118,6 +118,8 @@ function withAuth(o){o.phone=auth.phone;o.token=auth.token;return o;}
 function loadBranches(){
   return post({action:"c_branches",branch:""}).then(function(r){
     branches=(r&&r.branches)||[];
+    if(r&&r.ok===false){fatal=(r.error==="Unknown request")?"The lounge needs to update its booking server (one-time step). Please tell the lounge.":(r.error||"");}
+    else if(r&&r.ok&&!branches.length){fatal="No branch has switched on online booking yet. Please tell the lounge.";}
     if(branches.length===1)branchSlug=branches[0].slug;
     else if(branchSlug){var ok=false;branches.forEach(function(b){if(b.slug===branchSlug)ok=true;});if(!ok)branchSlug="";}
     if(branchSlug)lsSet("ygl_book_branch",branchSlug);

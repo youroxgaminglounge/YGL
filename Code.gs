@@ -26,6 +26,10 @@
  * with their mobile number and a PIN, and book slots. Their bookings are written
  * into the staff account's data, so they appear in the staff app after it syncs.
  * Also set the script time zone: Project settings > Time zone.
+ *
+ * PAYMENTS (Razorpay): add two Script properties (Project settings > Script
+ * properties): RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET. Never share the secret.
+ * Run installReconcileTrigger() once so unfinished payments are settled automatically.
  */
 
 // Optional: set a code that people must type to create a new account.
@@ -40,9 +44,11 @@ var MAX_TOKENS = 12;     // devices that can stay signed in per user
 // Leave empty ("") to use the first staff account that was created.
 var LOUNGE_USER = "";
 var CUSTOMER_MAX_UPCOMING = 3;   // upcoming bookings one customer may hold
+var HOLD_MINUTES = 10;           // how long a slot is held while the customer pays
+var CURRENCY_CODE = "INR";       // Razorpay currency
 
 function doGet() {
-  return json_({ ok: true, msg: "YGL sync server is running" });
+  return json_({ ok: true, msg: "YGL sync server is running", version: 3 });
 }
 
 function doPost(e) {
@@ -69,6 +75,7 @@ function route_(req) {
     case "logout":   return logout_(req);
     case "sync":     return sync_(req);
     case "ping":     return { ok: true };
+    case "c_branches": return cBranches_(req);
     case "c_info":     return cInfo_(req);
     case "c_register": return cRegister_(req);
     case "c_login":    return cLogin_(req);
@@ -77,6 +84,9 @@ function route_(req) {
     case "c_book":     return cBook_(req);
     case "c_my":       return cMy_(req);
     case "c_cancel":   return cCancel_(req);
+    case "c_repay":    return cRepay_(req);
+    case "c_pay_confirm": return cPayConfirm_(req);
+    case "c_delete":   return cDelete_(req);
     default:         return { ok: false, error: "Unknown request" };
   }
 }
@@ -207,6 +217,11 @@ function sync_(req) {
     }
   }
   if (dirty) sh.getRange(2, 1, vals.length, 4).setValues(vals);
+  var sawCfg = false;
+  for (var q = 0; q < ch.length; q++) if (ch[q] && ch[q].key === "c:main") sawCfg = true;
+  if ((won["c:main"] || sawCfg) && idx["c:main"] !== undefined) {
+    try { upsertBranch_(a.user, JSON.parse(vals[idx["c:main"]][3])); } catch (e) {}
+  }
 
   var since = Number(req.since) || 0, out = [];
   for (var j = 0; j < vals.length; j++) {
@@ -216,11 +231,31 @@ function sync_(req) {
       try { out.push({ key: String(r[0]), u: Number(r[1]), rec: JSON.parse(r[3]) }); } catch (e) {}
     }
   }
+  try { reconcileUser_(a.user); } catch (e) {}
   return { ok: true, now: now, records: out };
 }
 
 
-/* ================= customer booking ================= */
+/* ================= customer booking, branches and payments ================= */
+function prop_(k) { return PropertiesService.getScriptProperties().getProperty(k) || ""; }
+function rzpOn_() { return !!(prop_("RAZORPAY_KEY_ID") && prop_("RAZORPAY_KEY_SECRET")); }
+function toHex_(bytes) {
+  return bytes.map(function (b) { var h = (b < 0 ? b + 256 : b).toString(16); return h.length < 2 ? "0" + h : h; }).join("");
+}
+function hmacHex_(msg, secret) { return toHex_(Utilities.computeHmacSha256Signature(msg, secret)); }
+function rzp_(method, path, payload) {
+  var opts = {
+    method: method, muteHttpExceptions: true,
+    headers: { Authorization: "Basic " + Utilities.base64Encode(prop_("RAZORPAY_KEY_ID") + ":" + prop_("RAZORPAY_KEY_SECRET")) }
+  };
+  if (payload) { opts.contentType = "application/json"; opts.payload = JSON.stringify(payload); }
+  var res = UrlFetchApp.fetch("https://api.razorpay.com/v1" + path, opts);
+  var body = {};
+  try { body = JSON.parse(res.getContentText()); } catch (e) {}
+  return { code: res.getResponseCode(), body: body };
+}
+
+/* ---- branches ---- */
 function ownerUser_() {
   var u = cleanUser_(LOUNGE_USER);
   if (u) return u;
@@ -228,6 +263,54 @@ function ownerUser_() {
   if (sh.getLastRow() < 2) return null;
   return cleanUser_(sh.getRange(2, 1, 1, 1).getValues()[0][0]);
 }
+function branchesSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName("Branches");
+  if (!sh) {
+    sh = ss.insertSheet("Branches");
+    sh.appendRow(["slug", "user", "name", "city", "address", "phone", "listed", "updated"]);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+function allBranches_() {
+  var sh = branchesSheet_(), n = sh.getLastRow(), out = [];
+  if (n < 2) return out;
+  var vals = sh.getRange(2, 1, n - 1, 8).getValues();
+  for (var i = 0; i < vals.length; i++) {
+    var v = vals[i];
+    out.push({ slug: String(v[0]), user: String(v[1]), name: String(v[2]), city: String(v[3]), address: String(v[4]), phone: String(v[5]), listed: Number(v[6]) === 1, row: i + 2 });
+  }
+  return out;
+}
+function upsertBranch_(user, cfg) {
+  var sh = branchesSheet_(), f = null;
+  allBranches_().forEach(function (b) { if (b.user === user) f = b; });
+  var ob = (cfg && cfg.ob) || {};
+  var row = [f ? f.slug : ("b" + Utilities.getUuid().replace(/-/g, "").slice(0, 8)), user, String((cfg && cfg.lounge) || user).slice(0, 60),
+    String(ob.city || "").slice(0, 60), String(ob.address || "").slice(0, 160), String(ob.phone || "").slice(0, 20), ob.on === false ? 0 : 1, Date.now()];
+  if (f) sh.getRange(f.row, 1, 1, 8).setValues([row]); else sh.appendRow(row);
+}
+function resolveBranch_(slug) {
+  var list = allBranches_().filter(function (b) { return b.listed; });
+  if (!list.length) {
+    var u = ownerUser_();
+    return u ? { slug: "main", user: u, name: "", city: "", address: "", phone: "", listed: true } : null;
+  }
+  slug = String(slug || "");
+  if (slug) { for (var i = 0; i < list.length; i++) if (list[i].slug === slug) return list[i]; return null; }
+  return list.length === 1 ? list[0] : null;
+}
+function cBranches_(req) {
+  var list = allBranches_().filter(function (b) { return b.listed; });
+  if (!list.length) {
+    var u = ownerUser_();
+    if (u) return { ok: true, version: 3, branches: [{ slug: "main", name: "", city: "", address: "", phone: "" }] };
+  }
+  return { ok: true, version: 3, branches: list.map(function (b) { return { slug: b.slug, name: b.name, city: b.city, address: b.address, phone: b.phone }; }) };
+}
+
+/* ---- customers ---- */
 function customers_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName("Customers");
@@ -242,20 +325,81 @@ function findCustomer_(sh, phone) {
   var n = sh.getLastRow();
   if (n < 2) return null;
   var vals = sh.getRange(2, 1, n - 1, 8).getValues();
-  for (var i = 0; i < vals.length; i++) {
-    if (String(vals[i][0]) === phone) return { row: i + 2, v: vals[i] };
-  }
+  for (var i = 0; i < vals.length; i++) if (String(vals[i][0]) === phone) return { row: i + 2, v: vals[i] };
   return null;
 }
 function cleanPhone_(p) {
   var d = String(p || "").replace(/[^0-9]/g, "");
   return (d.length >= 7 && d.length <= 15) ? d : null;
 }
-function loadOwnerData_() {
-  var user = ownerUser_();
-  if (!user) return null;
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var name = "d_" + user;
+function cAuth_(req) {
+  var phone = cleanPhone_(req.phone);
+  if (!phone) return null;
+  var sh = customers_(), f = findCustomer_(sh, phone);
+  if (!f) return null;
+  var tokens = parseTokens_(f.v[4]), h = hash_(String(req.token || ""));
+  return tokens.indexOf(h) >= 0 ? { phone: phone, sh: sh, f: f, tokens: tokens, name: String(f.v[1]) } : null;
+}
+function cRegister_(req) {
+  var name = String(req.name || "").replace(/\s+/g, " ").trim();
+  if (name.length < 2 || name.length > 40) return { ok: false, error: "Please enter your name (2 to 40 letters)." };
+  var phone = cleanPhone_(req.phone);
+  if (!phone) return { ok: false, error: "Please enter a valid mobile number." };
+  var pin = String(req.pin || "");
+  if (!/^[0-9]{4,6}$/.test(pin)) return { ok: false, error: "PIN must be 4 to 6 digits." };
+  var sh = customers_();
+  if (findCustomer_(sh, phone)) return { ok: false, error: "This number is already registered. Please log in." };
+  var salt = Utilities.getUuid(), token = newToken_(), now = Date.now();
+  sh.appendRow([phone, name, salt, hash_(salt + ":" + pin), JSON.stringify([hash_(token)]), now, 0, 0]);
+  return { ok: true, token: token, name: name, phone: phone };
+}
+function cLogin_(req) {
+  var phone = cleanPhone_(req.phone), sh = customers_();
+  var f = phone ? findCustomer_(sh, phone) : null;
+  if (!f) return { ok: false, error: "Wrong mobile number or PIN." };
+  var v = f.v, now = Date.now();
+  if (Number(v[7]) > now) return { ok: false, error: "Too many wrong attempts. Try again in a few minutes." };
+  if (hash_(String(v[2]) + ":" + String(req.pin || "")) !== String(v[3])) {
+    var fails = Number(v[6]) + 1, lockUntil = 0;
+    if (fails >= MAX_FAILS) { lockUntil = now + LOCK_MINUTES * 60000; fails = 0; }
+    sh.getRange(f.row, 7, 1, 2).setValues([[fails, lockUntil]]);
+    return { ok: false, error: "Wrong mobile number or PIN." };
+  }
+  var tokens = parseTokens_(v[4]), token = newToken_();
+  tokens.push(hash_(token));
+  while (tokens.length > MAX_TOKENS) tokens.shift();
+  sh.getRange(f.row, 5).setValue(JSON.stringify(tokens));
+  sh.getRange(f.row, 7, 1, 2).setValues([[0, 0]]);
+  return { ok: true, token: token, name: String(v[1]), phone: phone };
+}
+function cLogout_(req) {
+  var a = cAuth_(req);
+  if (!a) return { ok: true };
+  var h = hash_(String(req.token || ""));
+  a.sh.getRange(a.f.row, 5).setValue(JSON.stringify(a.tokens.filter(function (t) { return t !== h; })));
+  return { ok: true };
+}
+function cDelete_(req) {
+  var a = cAuth_(req);
+  if (!a) return { ok: false, auth: true, error: "Please log in again." };
+  if (hash_(String(a.f.v[2]) + ":" + String(req.pin || "")) !== String(a.f.v[3])) return { ok: false, error: "Wrong PIN." };
+  var now = Date.now();
+  allBranches_().forEach(function (b) {
+    var d = loadDataFor_(b.user);
+    var key = "u:" + a.phone, rec = getRec_(d, key);
+    if (rec) { putRec_(d, key, { phone: a.phone, name: "Deleted customer", created: rec.created, deleted: true }, now); }
+    allSessions_(d).forEach(function (s) {
+      if (s.phone === a.phone && s.status === "pending") { s.status = "expired"; putRec_(d, "s:" + s.id, s, now); }
+    });
+    saveOwnerData_(d);
+  });
+  a.sh.deleteRow(a.f.row);
+  return { ok: true };
+}
+
+/* ---- branch data helpers ---- */
+function loadDataFor_(user) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), name = "d_" + user;
   var sh = ss.getSheetByName(name);
   if (!sh) {
     sh = ss.insertSheet(name);
@@ -275,20 +419,17 @@ function getRec_(d, key) {
 }
 function putRec_(d, key, rec, now) {
   rec._u = now;
-  var row = [key, now, now, JSON.stringify(rec)];
-  var i = d.idx[key];
-  if (i === undefined) { d.vals.push(row); d.idx[key] = d.vals.length - 1; }
-  else d.vals[i] = row;
+  var row = [key, now, now, JSON.stringify(rec)], i = d.idx[key];
+  if (i === undefined) { d.vals.push(row); d.idx[key] = d.vals.length - 1; } else d.vals[i] = row;
   d.dirty = true;
 }
 function saveOwnerData_(d) {
-  if (d.dirty && d.vals.length) d.sh.getRange(2, 1, d.vals.length, 4).setValues(d.vals);
+  if (d.dirty && d.vals.length) { d.sh.getRange(2, 1, d.vals.length, 4).setValues(d.vals); d.dirty = false; }
 }
 function allSessions_(d) {
   var out = [];
   for (var i = 0; i < d.vals.length; i++) {
-    var k = String(d.vals[i][0]);
-    if (k.charAt(0) !== "s") continue;
+    if (String(d.vals[i][0]).charAt(0) !== "s") continue;
     try { out.push(JSON.parse(d.vals[i][3])); } catch (e) {}
   }
   return out;
@@ -296,7 +437,7 @@ function allSessions_(d) {
 function obSettings_(cfg) {
   var ob = (cfg && cfg.ob) || {};
   return {
-    on: ob.on !== false,
+    on: ob.on !== false, pay: ob.pay !== false,
     days: Math.max(1, Math.min(30, Number(ob.days) || 7)),
     notice: Math.max(0, Number(ob.notice) || 15),
     max: Math.max(10, Math.min(480, Number(ob.max) || 180))
@@ -304,94 +445,46 @@ function obSettings_(cfg) {
 }
 function sessionBusy_(s, now) {
   if (s.status === "booked") return [Number(s.startAt), Number(s.endsAt)];
+  if (s.status === "pending" && Number(s.holdUntil) > now) return [Number(s.startAt), Number(s.endsAt)];
   if (s.status === "active") return [Number(s.checkIn || s.startAt), Math.max(Number(s.endsAt), now)];
   return null;
 }
-function cAuth_(req) {
-  var phone = cleanPhone_(req.phone);
-  if (!phone) return null;
-  var sh = customers_();
-  var f = findCustomer_(sh, phone);
-  if (!f) return null;
-  var tokens = parseTokens_(f.v[4]);
-  var h = hash_(String(req.token || ""));
-  return tokens.indexOf(h) >= 0 ? { phone: phone, sh: sh, f: f, tokens: tokens, name: String(f.v[1]) } : null;
+function branchCtx_(req) {
+  var b = resolveBranch_(req.branch);
+  if (!b) return { err: { ok: false, error: "Please choose a branch." } };
+  var d = loadDataFor_(b.user), cfg = getRec_(d, "c:main");
+  if (!cfg || !cfg.stations || !cfg.stations.length) return { err: { ok: false, error: "This branch is still setting things up. Please try again later." } };
+  return { b: b, d: d, cfg: cfg, ob: obSettings_(cfg) };
+}
+function payInfo_(x, s) {
+  return { keyId: prop_("RAZORPAY_KEY_ID"), orderId: s.orderId, amount: Math.round(Number(s.amountDue) * 100), currency: CURRENCY_CODE,
+    name: (x.cfg.lounge || x.b.name || "Booking"), description: String(s.stationName || "Gaming slot") };
+}
+function bookingView_(s) {
+  return { id: s.id, stationId: s.stationId, startAt: s.startAt, endsAt: s.endsAt, players: s.players, status: s.status,
+    paid: !!s.paid, amount: s.amountDue, holdUntil: s.holdUntil || 0 };
 }
 
 function cInfo_(req) {
-  var d = loadOwnerData_();
-  if (!d) return { ok: false, error: "This lounge has not set up online booking yet." };
-  var cfg = getRec_(d, "c:main");
-  if (!cfg || !cfg.stations || !cfg.stations.length) {
-    return { ok: false, error: "The lounge is still setting things up. Please try again later." };
-  }
-  var ob = obSettings_(cfg);
+  var x = branchCtx_(req);
+  if (x.err) return x.err;
+  var cfg = x.cfg, ob = x.ob, on = ob.on, msg = "";
+  if (on && ob.pay && !rzpOn_()) { on = false; msg = "Online payment is not set up for this branch yet."; }
   return {
-    ok: true, now: Date.now(), on: ob.on,
-    lounge: cfg.lounge || "", currency: cfg.currency || "", perPlayer: cfg.perPlayer !== false,
-    open: cfg.open, close: cfg.close, slotMin: cfg.slotMin,
-    days: ob.days, notice: ob.notice, max: ob.max,
+    ok: true, now: Date.now(), on: on, msg: msg, payRequired: ob.pay,
+    branch: { slug: x.b.slug, name: cfg.lounge || x.b.name, city: (cfg.ob && cfg.ob.city) || x.b.city, address: (cfg.ob && cfg.ob.address) || x.b.address, phone: (cfg.ob && cfg.ob.phone) || x.b.phone },
+    lounge: cfg.lounge || x.b.name || "", currency: cfg.currency || "", perPlayer: cfg.perPlayer !== false,
+    open: cfg.open, close: cfg.close, slotMin: cfg.slotMin, days: ob.days, notice: ob.notice, max: ob.max, holdMin: HOLD_MINUTES,
     stations: cfg.stations.map(function (s) { return { id: s.id, name: s.name, rate: s.rate }; })
   };
 }
-
-function cRegister_(req) {
-  var name = String(req.name || "").replace(/\s+/g, " ").trim();
-  if (name.length < 2 || name.length > 40) return { ok: false, error: "Please enter your name (2 to 40 letters)." };
-  var phone = cleanPhone_(req.phone);
-  if (!phone) return { ok: false, error: "Please enter a valid mobile number." };
-  var pin = String(req.pin || "");
-  if (!/^[0-9]{4,6}$/.test(pin)) return { ok: false, error: "PIN must be 4 to 6 digits." };
-  var d = loadOwnerData_();
-  if (!d) return { ok: false, error: "This lounge has not set up online booking yet." };
-  var cfg = getRec_(d, "c:main");
-  if (!obSettings_(cfg).on) return { ok: false, error: "Online booking is switched off right now." };
-  var sh = customers_();
-  if (findCustomer_(sh, phone)) return { ok: false, error: "This number is already registered. Please log in." };
-  var salt = Utilities.getUuid(), token = newToken_(), now = Date.now();
-  sh.appendRow([phone, name, salt, hash_(salt + ":" + pin), JSON.stringify([hash_(token)]), now, 0, 0]);
-  var key = "u:" + phone;
-  if (!getRec_(d, key)) { putRec_(d, key, { phone: phone, name: name, created: now }, now); saveOwnerData_(d); }
-  return { ok: true, token: token, name: name, phone: phone };
-}
-
-function cLogin_(req) {
-  var phone = cleanPhone_(req.phone);
-  var sh = customers_();
-  var f = phone ? findCustomer_(sh, phone) : null;
-  if (!f) return { ok: false, error: "Wrong mobile number or PIN." };
-  var v = f.v, now = Date.now();
-  if (Number(v[7]) > now) return { ok: false, error: "Too many wrong attempts. Try again in a few minutes." };
-  var good = hash_(String(v[2]) + ":" + String(req.pin || "")) === String(v[3]);
-  if (!good) {
-    var fails = Number(v[6]) + 1, lockUntil = 0;
-    if (fails >= MAX_FAILS) { lockUntil = now + LOCK_MINUTES * 60000; fails = 0; }
-    sh.getRange(f.row, 7, 1, 2).setValues([[fails, lockUntil]]);
-    return { ok: false, error: "Wrong mobile number or PIN." };
-  }
-  var tokens = parseTokens_(v[4]), token = newToken_();
-  tokens.push(hash_(token));
-  while (tokens.length > MAX_TOKENS) tokens.shift();
-  sh.getRange(f.row, 5).setValue(JSON.stringify(tokens));
-  sh.getRange(f.row, 7, 1, 2).setValues([[0, 0]]);
-  return { ok: true, token: token, name: String(v[1]), phone: phone };
-}
-
-function cLogout_(req) {
-  var a = cAuth_(req);
-  if (!a) return { ok: true };
-  var h = hash_(String(req.token || ""));
-  a.sh.getRange(a.f.row, 5).setValue(JSON.stringify(a.tokens.filter(function (t) { return t !== h; })));
-  return { ok: true };
-}
-
 function cAvail_(req) {
-  var d = loadOwnerData_();
-  if (!d) return { ok: false, error: "This lounge has not set up online booking yet." };
+  var x = branchCtx_(req);
+  if (x.err) return x.err;
   var from = Number(req.from), to = Number(req.to), now = Date.now();
   if (!(from > 0) || !(to > from) || to - from > 9 * 86400000) return { ok: false, error: "Bad date range." };
   var busy = [];
-  allSessions_(d).forEach(function (s) {
+  allSessions_(x.d).forEach(function (s) {
     var iv = sessionBusy_(s, now);
     if (iv && iv[0] < to && iv[1] > from) busy.push({ s: s.stationId, a: iv[0], b: iv[1] });
   });
@@ -401,12 +494,12 @@ function cAvail_(req) {
 function cBook_(req) {
   var a = cAuth_(req);
   if (!a) return { ok: false, auth: true, error: "Please log in again." };
-  var d = loadOwnerData_();
-  if (!d) return { ok: false, error: "This lounge has not set up online booking yet." };
-  var cfg = getRec_(d, "c:main");
-  if (!cfg || !cfg.stations) return { ok: false, error: "The lounge is still setting things up." };
-  var ob = obSettings_(cfg);
+  var x = branchCtx_(req);
+  if (x.err) return x.err;
+  var d = x.d, cfg = x.cfg, ob = x.ob;
   if (!ob.on) return { ok: false, error: "Online booking is switched off right now." };
+  var payReq = ob.pay;
+  if (payReq && !rzpOn_()) return { ok: false, error: "Online payment is not set up for this branch yet." };
   var urec = getRec_(d, "u:" + a.phone);
   if (urec && urec.blocked) return { ok: false, error: "Online booking is not available for this number. Please speak to the lounge." };
 
@@ -421,65 +514,181 @@ function cBook_(req) {
   if (mins % slot !== 0) return { ok: false, error: "Please choose whole slots." };
   if (start < now + ob.notice * 60000 - 60000) return { ok: false, error: "That time is too soon. Please choose a later slot." };
   if (start > now + ob.days * 86400000) return { ok: false, error: "You can book up to " + ob.days + " days ahead." };
-
   var tz = Session.getScriptTimeZone();
   var day1 = Utilities.formatDate(new Date(start), tz, "yyyyMMdd"), day2 = Utilities.formatDate(new Date(end - 1), tz, "yyyyMMdd");
   var sMin = Number(Utilities.formatDate(new Date(start), tz, "H")) * 60 + Number(Utilities.formatDate(new Date(start), tz, "m"));
-  var eMin = sMin + mins;
-  if (day1 !== day2 || sMin < open * 60 || eMin > close * 60 || (sMin - open * 60) % slot !== 0) {
+  if (day1 !== day2 || sMin < open * 60 || sMin + mins > close * 60 || (sMin - open * 60) % slot !== 0) {
     return { ok: false, error: "That time is outside the lounge opening hours or slot times." };
   }
   var players = Math.max(1, Math.min(8, parseInt(req.players, 10) || 1));
   var sessions = allSessions_(d), upcoming = 0;
   for (var i = 0; i < sessions.length; i++) {
     var s = sessions[i];
-    if (s.phone === a.phone && s.status === "booked" && Number(s.endsAt) > now) upcoming++;
+    if (s.phone === a.phone && (s.status === "booked" || (s.status === "pending" && Number(s.holdUntil) > now)) && Number(s.endsAt) > now) upcoming++;
     if (s.stationId === st.id) {
       var iv = sessionBusy_(s, now);
       if (iv && iv[0] < end && iv[1] > start) return { ok: false, taken: true, error: "Sorry, that slot was just taken. Please pick another." };
     }
   }
-  if (upcoming >= CUSTOMER_MAX_UPCOMING) return { ok: false, error: "You already have " + CUSTOMER_MAX_UPCOMING + " upcoming bookings. Cancel one or visit the lounge." };
+  if (upcoming >= CUSTOMER_MAX_UPCOMING) return { ok: false, error: "You already have " + CUSTOMER_MAX_UPCOMING + " upcoming bookings. Please use or finish one first." };
 
+  var amount = Math.round(st.rate * mins / 60 * (cfg.perPlayer !== false ? players : 1) * 100) / 100;
   var id = "o" + now.toString(36) + Math.random().toString(36).slice(2, 6);
   var rec = {
-    id: id, stationId: st.id, name: a.name, phone: a.phone, players: players, status: "booked",
+    id: id, stationId: st.id, stationName: st.name, name: a.name, phone: a.phone, players: players, status: payReq ? "pending" : "booked",
     startAt: start, endsAt: end, checkIn: null, checkOut: null, rate: st.rate, amount: null, pay: null,
-    walkIn: false, source: "online", createdAt: now
+    walkIn: false, source: "online", createdAt: now, amountDue: amount, paid: false
   };
+  var out = { ok: true };
+  if (payReq) {
+    var paise = Math.round(amount * 100);
+    if (paise < 100) return { ok: false, error: "This booking amount is too small for online payment." };
+    var o = rzp_("post", "/orders", { amount: paise, currency: CURRENCY_CODE, receipt: id, notes: { branch: x.b.slug, phone: a.phone, station: st.name } });
+    if (o.code !== 200 || !o.body.id) return { ok: false, error: "Could not start the payment. Please try again." };
+    rec.orderId = o.body.id;
+    rec.holdUntil = now + HOLD_MINUTES * 60000;
+    out.pay = payInfo_(x, rec);
+  }
   putRec_(d, "s:" + id, rec, now);
+  if (!urec) putRec_(d, "u:" + a.phone, { phone: a.phone, name: a.name, created: now }, now);
   saveOwnerData_(d);
-  return { ok: true, booking: { id: id, stationId: st.id, startAt: start, endsAt: end, players: players, status: "booked" } };
+  out.booking = bookingView_(rec);
+  return out;
+}
+
+function cRepay_(req) {
+  var a = cAuth_(req);
+  if (!a) return { ok: false, auth: true, error: "Please log in again." };
+  var x = branchCtx_(req);
+  if (x.err) return x.err;
+  var key = "s:" + String(req.id || "").replace(/[^A-Za-z0-9_\-]/g, ""), s = getRec_(x.d, key), now = Date.now();
+  if (!s || s.phone !== a.phone) return { ok: false, error: "Booking not found." };
+  if (s.status !== "pending" || !s.orderId) return { ok: false, error: "This booking is not waiting for payment." };
+  if (Number(s.holdUntil) < now) {
+    var sessions = allSessions_(x.d);
+    for (var i = 0; i < sessions.length; i++) {
+      var o = sessions[i];
+      if (o.id !== s.id && o.stationId === s.stationId) {
+        var iv = sessionBusy_(o, now);
+        if (iv && iv[0] < s.endsAt && iv[1] > s.startAt) {
+          s.status = "expired"; putRec_(x.d, key, s, now); saveOwnerData_(x.d);
+          return { ok: false, taken: true, error: "Sorry, that slot has been taken. Please pick another." };
+        }
+      }
+    }
+    s.holdUntil = now + HOLD_MINUTES * 60000;
+    putRec_(x.d, key, s, now); saveOwnerData_(x.d);
+  }
+  return { ok: true, pay: payInfo_(x, s), booking: bookingView_(s) };
+}
+
+function refund_(paymentId, paise, why) {
+  return rzp_("post", "/payments/" + encodeURIComponent(paymentId) + "/refund", { amount: paise, notes: { reason: why } });
+}
+function settlePayment_(d, s, paymentId, now) {
+  var p = rzp_("get", "/payments/" + encodeURIComponent(paymentId));
+  if (p.code !== 200) return { ok: false, error: "Could not verify the payment yet. If money was deducted it will be confirmed or refunded automatically." };
+  var pay = p.body, paise = Math.round(Number(s.amountDue) * 100);
+  if (pay.order_id !== s.orderId || Number(pay.amount) !== paise) return { ok: false, error: "The payment details did not match this booking." };
+  if (pay.status === "authorized") {
+    var cp = rzp_("post", "/payments/" + encodeURIComponent(paymentId) + "/capture", { amount: pay.amount, currency: pay.currency });
+    if (cp.code !== 200) return { ok: false, error: "Could not complete the payment. Please contact the lounge." };
+    pay.status = "captured";
+  }
+  if (pay.status !== "captured") return { ok: false, error: "The payment is not complete yet." };
+  var sessions = allSessions_(d), key = "s:" + s.id;
+  for (var i = 0; i < sessions.length; i++) {
+    var o = sessions[i];
+    if (o.id !== s.id && o.stationId === s.stationId) {
+      var iv = sessionBusy_(o, now);
+      if (iv && iv[0] < s.endsAt && iv[1] > s.startAt) {
+        refund_(paymentId, paise, "Slot no longer available");
+        s.status = "expired"; s.refunded = true; s.paymentId = paymentId; delete s.holdUntil;
+        putRec_(d, key, s, now); saveOwnerData_(d);
+        return { ok: false, refunded: true, error: "Sorry, this slot was taken while you were paying. Your payment has been refunded." };
+      }
+    }
+  }
+  s.status = "booked"; s.paid = true; s.paymentId = paymentId; s.amountPaid = s.amountDue; s.paidAt = now; delete s.holdUntil;
+  putRec_(d, key, s, now); saveOwnerData_(d);
+  return { ok: true };
+}
+function cPayConfirm_(req) {
+  var a = cAuth_(req);
+  if (!a) return { ok: false, auth: true, error: "Please log in again." };
+  var x = branchCtx_(req);
+  if (x.err) return x.err;
+  var key = "s:" + String(req.id || "").replace(/[^A-Za-z0-9_\-]/g, ""), s = getRec_(x.d, key), now = Date.now();
+  if (!s || s.phone !== a.phone) return { ok: false, error: "Booking not found." };
+  if (s.status === "booked" && s.paid) return { ok: true, booking: bookingView_(s) };
+  if (s.status !== "pending" && s.status !== "expired") return { ok: false, error: "This booking is not waiting for payment." };
+  var secret = prop_("RAZORPAY_KEY_SECRET");
+  var pid = String(req.razorpay_payment_id || ""), oid = String(req.razorpay_order_id || ""), sig = String(req.razorpay_signature || "");
+  if (!secret || !pid || oid !== s.orderId || hmacHex_(oid + "|" + pid, secret) !== sig) return { ok: false, error: "The payment could not be verified." };
+  var r = settlePayment_(x.d, s, pid, now);
+  if (!r.ok) return r;
+  return { ok: true, booking: bookingView_(getRec_(x.d, key)) };
+}
+
+function reconcileUser_(user) {
+  if (!rzpOn_()) return;
+  var d = loadDataFor_(user), now = Date.now(), calls = 0;
+  var sessions = allSessions_(d);
+  for (var i = 0; i < sessions.length && calls < 5; i++) {
+    var s = sessions[i];
+    if (s.status !== "pending" || !s.orderId) continue;
+    if (Number(s.createdAt) > now - 90000 || Number(s.createdAt) < now - 6 * 3600000) {
+      if (Number(s.createdAt) < now - 6 * 3600000 && Number(s.holdUntil) < now) { s.status = "expired"; putRec_(d, "s:" + s.id, s, now); }
+      continue;
+    }
+    calls++;
+    var r = rzp_("get", "/orders/" + encodeURIComponent(s.orderId) + "/payments");
+    var items = (r.code === 200 && r.body.items) ? r.body.items : [], paid = null;
+    for (var k = 0; k < items.length; k++) if (items[k].status === "captured" || items[k].status === "authorized") paid = items[k];
+    if (paid) { settlePayment_(d, s, paid.id, now); }
+    else if (r.code === 200 && Number(s.holdUntil) < now) { s.status = "expired"; putRec_(d, "s:" + s.id, s, now); }
+  }
+  saveOwnerData_(d);
+}
+function reconcileAll() {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(25000);
+  try { allBranches_().forEach(function (b) { reconcileUser_(b.user); }); } finally { lock.releaseLock(); }
+}
+function installReconcileTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === "reconcileAll") ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger("reconcileAll").timeBased().everyMinutes(5).create();
 }
 
 function cMy_(req) {
   var a = cAuth_(req);
   if (!a) return { ok: false, auth: true, error: "Please log in again." };
-  var d = loadOwnerData_();
-  if (!d) return { ok: false, error: "This lounge has not set up online booking yet." };
-  var now = Date.now(), out = [];
+  var x = branchCtx_(req);
+  if (x.err) return x.err;
+  try { reconcileUser_(x.b.user); } catch (e) {}
+  var d = loadDataFor_(x.b.user), now = Date.now(), out = [];
   allSessions_(d).forEach(function (s) {
     if (s.phone !== a.phone) return;
-    if (s.status !== "booked" && s.status !== "active" && s.status !== "cancelled") return;
-    if (Number(s.endsAt) < now - 2 * 86400000) return;
-    out.push({ id: s.id, stationId: s.stationId, startAt: s.startAt, endsAt: s.endsAt, players: s.players, status: s.status });
+    var ok = s.status === "booked" || s.status === "active" || s.status === "cancelled" || (s.status === "pending" && Number(s.holdUntil) > now);
+    if (!ok || Number(s.endsAt) < now - 2 * 86400000) return;
+    out.push(bookingView_(s));
   });
-  out.sort(function (x, y) { return y.startAt - x.startAt; });
+  out.sort(function (p, q) { return q.startAt - p.startAt; });
   return { ok: true, now: now, bookings: out.slice(0, 20) };
 }
 
 function cCancel_(req) {
   var a = cAuth_(req);
   if (!a) return { ok: false, auth: true, error: "Please log in again." };
-  var d = loadOwnerData_();
-  if (!d) return { ok: false, error: "This lounge has not set up online booking yet." };
-  var key = "s:" + String(req.id || "").replace(/[^A-Za-z0-9_\-]/g, "");
-  var s = getRec_(d, key), now = Date.now();
+  var x = branchCtx_(req);
+  if (x.err) return x.err;
+  var key = "s:" + String(req.id || "").replace(/[^A-Za-z0-9_\-]/g, ""), s = getRec_(x.d, key), now = Date.now();
   if (!s || s.phone !== a.phone) return { ok: false, error: "Booking not found." };
+  if (s.status === "pending") { s.status = "expired"; putRec_(x.d, key, s, now); saveOwnerData_(x.d); return { ok: true }; }
   if (s.status !== "booked") return { ok: false, error: "This booking can no longer be cancelled here." };
+  if (s.paid) return { ok: false, error: "Paid bookings cannot be cancelled online. Please contact the lounge." };
   if (Number(s.startAt) < now) return { ok: false, error: "This booking has already started." };
   s.status = "cancelled"; s.cancelledBy = "customer";
-  putRec_(d, key, s, now);
-  saveOwnerData_(d);
+  putRec_(x.d, key, s, now); saveOwnerData_(x.d);
   return { ok: true };
 }
