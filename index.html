@@ -354,7 +354,7 @@ var DEFAULT_CONFIG = {
     {id:"ps5",name:"PS5",rate:150},{id:"xbs",name:"Xbox Series S",rate:120},
     {id:"proj",name:"Projector",rate:300}
   ],
-  open:10, close:23, slotMin:60, minBillMin:30, roundMin:15, perPlayer:true, ob:{on:true,days:7,notice:15,max:180}, lounge:"Yourox Gaming Lounge", currency:"\u20B9"
+  open:10, close:23, slotMin:60, minBillMin:30, roundMin:15, perPlayer:true, ob:{on:true,days:7,notice:15,max:180,pay:true,city:"",address:"",phone:""}, lounge:"Yourox Gaming Lounge", currency:"\u20B9"
 };
 var config = clone(DEFAULT_CONFIG);
 var sessions = {};            // id -> session
@@ -447,6 +447,7 @@ function loadLocal(){
 
 /* ---------- domain logic ---------- */
 function effStatus(s,now){
+  if(s.status==="pending")return now<(s.holdUntil||0)?"pending":"expired";
   if(s.status==="booked"&&now>s.endsAt)return "noshow";
   return s.status;
 }
@@ -459,7 +460,8 @@ function conflicts(stationId,start,end,excludeId){
   var now=Date.now();
   return list().filter(function(s){
     if(s.stationId!==stationId||s.id===excludeId)return false;
-    if(s.status!=="booked"&&s.status!=="active")return false;
+    var live=(s.status==="pending"&&now<(s.holdUntil||0));
+    if(s.status!=="booked"&&s.status!=="active"&&!live)return false;
     if(s.status==="booked"&&now>s.endsAt)return false;
     var iv=interval(s,now);return iv[0]<end&&iv[1]>start;
   });
@@ -513,7 +515,7 @@ function cancelBooking(s){
 }
 function checkOut(s,pay,amt,rec){
   var now=Date.now();var b=billing(s,now);
-  var n=Object.assign({},s,{status:"done",checkOut:now,pausedAt:null,pausedMs:(s.pausedMs||0)+(s.pausedAt?now-s.pausedAt:0),amount:(amt==null?Math.round(b.amount):amt),received:(rec==null?null:rec),calcAmount:Math.round(b.amount),pay:pay,billedMin:b.billed});
+  var n=Object.assign({},s,{status:"done",checkOut:now,pausedAt:null,pausedMs:(s.pausedMs||0)+(s.pausedAt?now-s.pausedAt:0),amount:(amt==null?Math.round(b.amount):amt),received:(rec==null?null:rec),calcAmount:Math.round(b.amount),pay:pay,billedMin:b.billed,paidOnline:Math.round(s.amountPaid||0)});
   saveSession(n).then(function(){toast(esc(s.name)+" checked out. Collect "+money(amt==null?b.amount:amt)+".");}).catch(function(){});
 }
 function extendModal(id){
@@ -582,7 +584,7 @@ function renderFloor(){
       var d=ss.s;
       h+='<div class="card due"><div class="card-h"><h3>'+esc(st.name)+'</h3><span class="chip due">'+(ss.late?"Late":"Booked")+'</span></div>'+
         '<div><div class="who">'+esc(d.name)+(d.players>1?' <span class="sub">+ '+(d.players-1)+' more</span>':'')+'</div>'+
-        '<div class="sub">Slot '+fmtTime(d.startAt)+" to "+fmtTime(d.endsAt)+(ss.late?" \u2022 not arrived yet":"")+(d.source==="online"?" \u2022 online booking":"")+(d.phone?" \u2022 "+esc(d.phone):"")+'</div></div>'+
+        '<div class="sub">Slot '+fmtTime(d.startAt)+" to "+fmtTime(d.endsAt)+(ss.late?" \u2022 not arrived yet":"")+(d.source==="online"?(d.paid?" \u2022 PAID online "+money(d.amountPaid||0):" \u2022 online booking"):"")+(d.phone?" \u2022 "+esc(d.phone):"")+'</div></div>'+
         '<div class="row"><button class="btn primary" data-act="in" data-id="'+d.id+'">Check in</button><button class="btn danger sm" data-act="cancel" data-id="'+d.id+'">Cancel</button></div></div>';
     }else{
       h+='<div class="card free"><div class="card-h"><h3>'+esc(st.name)+'</h3><span class="chip free">Free</span></div>'+
@@ -610,7 +612,7 @@ function renderSlots(){
     '<button class="btn sm" data-act="dnext" aria-label="Next day">\u203A</button>'+
     '<button class="btn sm" data-act="dtoday">Today</button></div></div>';
   if(!config.stations.length||!times.length){h+='<div class="empty">Add stations and opening hours in Setup to see the slot grid.</div>';view.innerHTML=h;return;}
-  var vis=list().filter(function(s){return s.status!=="cancelled"&&!(s.status==="booked"&&now>s.endsAt&&false);});
+  var vis=list().filter(function(s){return s.status!=="cancelled"&&s.status!=="expired"&&!(s.status==="pending"&&now>=(s.holdUntil||0));});
   h+='<div class="scroll"><table class="slots"><thead><tr><th class="t"></th>';
   config.stations.forEach(function(st){h+='<th>'+esc(st.name)+'</th>';});
   h+='</tr></thead><tbody>';
@@ -627,7 +629,7 @@ function renderSlots(){
         var iv2=interval(hit,now);
         var first=iv2[0]>=t||t===times[0];
         var cls=hit.status==="active"?"active":(hit.status==="done"?"done":"booked");
-        h+='<td><button class="cell '+cls+'" data-act="detail" data-id="'+hit.id+'">'+(first?'<b>'+esc(hit.name)+'</b>'+(hit.status==="booked"?(hit.source==="online"?"Online":"Booked"):hit.status==="active"?"In use":"Played"):'<span aria-hidden="true">\u2193</span>')+'</button></td>';
+        h+='<td><button class="cell '+cls+'" data-act="detail" data-id="'+hit.id+'">'+(first?'<b>'+esc(hit.name)+'</b>'+(hit.status==="pending"?"Paying\u2026":hit.status==="booked"?(hit.source==="online"?(hit.paid?"Paid":"Online"):"Booked"):hit.status==="active"?"In use":"Played"):'<span aria-hidden="true">\u2193</span>')+'</button></td>';
       }else if(t+step<=now){
         h+='<td><span class="cell past" aria-hidden="true"></span></td>';
       }else{
@@ -645,7 +647,7 @@ function renderSlots(){
 
 function renderLog(){
   var now=Date.now();
-  var rows=list().filter(function(s){var t=s.checkIn||s.startAt;return t>=logDate&&t<logDate+864e5;})
+  var rows=list().filter(function(s){var t=s.checkIn||s.startAt;return t>=logDate&&t<logDate+864e5&&s.status!=="pending"&&s.status!=="expired";})
     .sort(function(a,b){return (a.checkIn||a.startAt)-(b.checkIn||b.startAt);});
   var visits=rows.filter(function(s){return s.checkIn;});
   var mins=visits.reduce(function(a,s){return a+playedMin(s,s.checkOut||now);},0);
@@ -681,7 +683,7 @@ function bindLogDate(){
   if(ld)ld.addEventListener("change",function(){if(ld.value){logDate=parseInputDate(ld.value);render();}});
 }
 
-function payKey(p){p=String(p||"Cash").toLowerCase();return p==="upi"?"upi":(p==="card"?"card":"cash");}
+function payKey(p){p=String(p||"Cash").toLowerCase();return (p==="upi"||p==="online")?"upi":(p==="card"?"card":"cash");}
 function revenueByDay(from,to){
   var days={};
   function get(k){return days[k]||(days[k]={day:k,app:{cash:0,upi:0,card:0},man:{cash:0,upi:0,card:0}});}
@@ -689,7 +691,7 @@ function revenueByDay(from,to){
     if(s.status!=="done")return;
     var k=dayStart(s.checkOut||s.checkIn||s.startAt);
     if(k<from||k>to)return;
-    get(k).app[payKey(s.pay)]+=(s.amount||0);
+    var po=Math.min(s.paidOnline||0,s.amount||0);if(po>0){get(k).app.upi+=po;get(k).app[payKey(s.pay)]+=(s.amount||0)-po;}else{get(k).app[payKey(s.pay)]+=(s.amount||0);}
   });
   Object.keys(ledger).forEach(function(id){
     var e=ledger[id];if(e.deleted)return;var k=dayStart(e.date);
@@ -909,7 +911,7 @@ function syncModal(mode){
     (create?'<label class="f">Confirm password<input type="password" id="y-pass2" autocomplete="new-password"></label><label class="f">Sign-up code (only if your owner set one)<input type="text" id="y-code" autocapitalize="none" autocomplete="off"></label>':'')+
     '<div class="err" id="y-err"></div><div class="actions">'+
     (create?'<button class="btn" data-act="syncmode" data-p="login">I have an account</button><button class="btn primary" id="y-go">Create account</button>':'<button class="btn" data-act="syncmode" data-p="create">Create account</button><button class="btn primary" id="y-go">Log in</button>')+
-    '</div><div class="sub">Your records stay on this device and are copied to your cloud sheet once you sign in.</div><div class="sub" style="text-align:right;opacity:.6">App version 15</div></div>');
+    '</div><div class="sub">Your records stay on this device and are copied to your cloud sheet once you sign in.</div><div class="sub" style="text-align:right;opacity:.6">App version 16</div></div>');
   document.getElementById("y-go").addEventListener("click",function(){
     var err=document.getElementById("y-err"),go=document.getElementById("y-go"),uEl=document.getElementById("y-url");
     if(uEl){
@@ -1058,7 +1060,7 @@ function custBookings(phone){
   var n=0,up=0,now=Date.now();
   Object.keys(sessions).forEach(function(id){
     var s=sessions[id];
-    if(s.phone&&String(s.phone).replace(/\D/g,"")===phone){if(s.status!=="cancelled")n++;if(s.status==="booked"&&s.endsAt>now)up++;}
+    if(s.phone&&String(s.phone).replace(/\D/g,"")===phone){if(s.status!=="cancelled"&&s.status!=="pending"&&s.status!=="expired")n++;if(s.status==="booked"&&s.endsAt>now)up++;}
   });
   return {n:n,up:up};
 }
@@ -1098,13 +1100,17 @@ function bookLink(){
 }
 function onlineUI(){
   if(!SYNC_ENABLED||shared)return "";
-  var ob=config.ob||{on:true,days:7,notice:15,max:180},link=sync.token?bookLink():"";
+  var ob=config.ob||{on:true,days:7,notice:15,max:180,pay:true},link=sync.token?bookLink():"";
   return '<div class="panel"><h2>Online booking</h2>'+
     (sync.token?'':'<p class="hint">Sign in to sync first (button at the top). Then customers can book from their own phones.</p>')+
     '<div class="fields"><label class="f">Customers can book online<select id="ob-on"><option value="1"'+(ob.on!==false?" selected":"")+'>Yes</option><option value="0"'+(ob.on===false?" selected":"")+'>No, switched off</option></select></label>'+
     '<label class="f">Book up to (days ahead)<input type="number" id="ob-days" min="1" max="30" value="'+(ob.days||7)+'"></label>'+
     '<label class="f">Minimum notice (minutes)<input type="number" id="ob-notice" min="0" max="240" value="'+(ob.notice==null?15:ob.notice)+'"></label>'+
-    '<label class="f">Longest booking (minutes)<input type="number" id="ob-max" min="10" max="480" value="'+(ob.max||180)+'"></label></div>'+
+    '<label class="f">Longest booking (minutes)<input type="number" id="ob-max" min="10" max="480" value="'+(ob.max||180)+'"></label>'+
+    '<label class="f">Customers pay online<select id="ob-pay"><option value="1"'+(ob.pay!==false?" selected":"")+'>Yes, full amount</option><option value="0"'+(ob.pay===false?" selected":"")+'>No, pay at the counter</option></select></label>'+
+    '<label class="f">Branch city or area<input type="text" id="ob-city" maxlength="60" value="'+esc(ob.city||"")+'"></label>'+
+    '<label class="f">Branch address<input type="text" id="ob-addr" maxlength="160" value="'+esc(ob.address||"")+'"></label>'+
+    '<label class="f">Branch phone<input type="tel" id="ob-phone" maxlength="20" value="'+esc(ob.phone||"")+'"></label></div>'+
     (link?'<label class="f" style="margin-top:12px">Customer booking link<input type="text" id="ob-link" readonly value="'+esc(link)+'"></label><div class="actions" style="justify-content:flex-start"><button type="button" class="btn sm" data-act="copylink">Copy link</button></div><p class="hint">Share this link, or turn it into a QR code. Customers register with their mobile number and a PIN. Press Save setup after changing the settings above.</p>':'')+
     '</div>';
 }
@@ -1134,7 +1140,7 @@ function renderSetup(){
     '<label class="f">Currency symbol<input type="text" id="c-cur" list="cur-list" maxlength="4" value="'+esc(config.currency)+'"><datalist id="cur-list"><option value="\u20B9"><option value="$"><option value="\u20AC"><option value="\u00A3"><option value="AED "><option value="Rs "></datalist></label>'+
     '<label class="f">Charge for each player<select id="c-pp"><option value="1"'+(config.perPlayer!==false?" selected":"")+'>Yes, every player pays the full rate</option><option value="0"'+(config.perPlayer===false?" selected":"")+'>No, one charge per station</option></select></label>'+
     '</div><p class="hint">Billing counts from entry to exit, rounded up, with the minimum applied.</p>'+
-    '<div class="actions"><button class="btn primary" data-act="savecfg">Save setup</button></div><div class="sub" role="status" style="text-align:right;margin-top:6px;color:'+(setupMsg.c||"var(--muted)")+'">'+esc(setupMsg.t)+'</div></div><p class="hint" style="text-align:center">YGL Lounge Manager \u2022 version 15 \u2022 by Yourox Gaming Lounge</p></div>';
+    '<div class="actions"><button class="btn primary" data-act="savecfg">Save setup</button></div><div class="sub" role="status" style="text-align:right;margin-top:6px;color:'+(setupMsg.c||"var(--muted)")+'">'+esc(setupMsg.t)+'</div></div><p class="hint" style="text-align:center">YGL Lounge Manager \u2022 version 16 \u2022 by Yourox Gaming Lounge</p></div>';
   view.innerHTML=h;
 }
 function hourOpts(sel,a,b){var o="";for(var i=a;i<=b;i++)o+='<option value="'+i+'"'+(i===sel?" selected":"")+'>'+fmtHour(i===24?0:i).replace(/^12:00 AM$/,i===24?"12:00 AM (midnight)":"12:00 AM")+'</option>';return o;}
@@ -1243,18 +1249,19 @@ function bookModal(stationId,startMs,dayMs){
 function outModal(id){
   var s=sessions[id];if(!s)return;
   var now=Date.now(),b=billing(s,now),st=stationName(s.stationId);
+  var pre=s.paid?Math.round(s.amountPaid||0):0,due=Math.max(0,Math.round(b.amount)-pre);
   openModal('<h2>Check out '+esc(s.name)+'</h2>'+
     '<div class="kv"><span>Station</span><b>'+esc(st)+'</b><span>Entry</span><b>'+fmtTime(s.checkIn)+'</b><span>Exit</span><b>'+fmtTime(now)+'</b>'+
     '<span>Time played</span><b>'+fmtDur(b.played)+'</b><span>Billed for</span><b>'+fmtDur(b.billed)+' at '+money(b.rate)+'/h</b>'+(b.players>1?'<span>Players</span><b>'+b.players+' \u00D7 '+money(b.rate*b.billed/60)+'</b>':'')+'</div>'+
-    '<div class="total"><span>Calculated bill</span><b>'+money(b.amount)+'</b></div>'+
+    '<div class="total"><span>Calculated bill</span><b>'+money(b.amount)+'</b></div>'+(pre?'<div class="sub" style="margin:-4px 0 8px">Already paid online: '+money(pre)+'. Balance to collect now: '+money(due)+'</div>':'')+
     '<div class="two"><label class="f">Amount to charge<input type="number" id="o-amt" min="0" step="1" inputmode="decimal" value="'+Math.round(b.amount)+'"></label>'+
-    '<label class="f">Cash received<input type="number" id="o-rec" min="0" step="1" inputmode="decimal" value="'+Math.round(b.amount)+'"></label></div>'+
+    '<label class="f">Cash received<input type="number" id="o-rec" min="0" step="1" inputmode="decimal" value="'+due+'"></label></div>'+
     '<div class="sub" id="o-chg" style="margin:6px 0 10px"></div>'+
-    '<label class="f">Paid by<select id="o-pay"><option>Cash</option><option>UPI</option><option>Card</option></select></label>'+
+    '<label class="f">Paid by<select id="o-pay">'+(pre?'<option>Online</option>':'')+'<option>Cash</option><option>UPI</option><option>Card</option></select></label>'+
     '<div class="actions"><button class="btn" data-act="mclose">Not yet</button><button class="btn primary" id="o-go">Confirm check-out</button></div>');
   var oa=document.getElementById("o-amt"),orc=document.getElementById("o-rec"),och=document.getElementById("o-chg");
-  function oupd(){var a=parseFloat(oa.value)||0,r=parseFloat(orc.value);if(isNaN(r))r=0;var d=r-a;och.textContent=d>0?"Change to return: "+money(d):(d<0?"Balance due: "+money(-d):"Exact amount received");och.style.color=d<0?"var(--over)":"";}
-  oa.addEventListener("input",function(){orc.value=oa.value;oupd();});orc.addEventListener("input",oupd);oupd();
+  function oupd(){var a=parseFloat(oa.value)||0,r=parseFloat(orc.value);if(isNaN(r))r=0;var d=r+pre-a;och.textContent=d>0?"Change to return: "+money(d):(d<0?"Balance due: "+money(-d):"Exact amount received");och.style.color=d<0?"var(--over)":"";}
+  oa.addEventListener("input",function(){orc.value=Math.max(0,(parseFloat(oa.value)||0)-pre);oupd();});orc.addEventListener("input",oupd);oupd();
   document.getElementById("o-go").addEventListener("click",function(){
     checkOut(sessions[id]||s,document.getElementById("o-pay").value,Math.max(0,Math.round(parseFloat(oa.value)||0)),Math.max(0,Math.round(parseFloat(orc.value)||0)));closeModal();render();
   });
@@ -1284,13 +1291,14 @@ function editPayModal(id){
 function detailModal(id){
   var s=sessions[id];if(!s)return;
   var now=Date.now(),es=effStatus(s,now);
-  var label={active:"Inside",done:"Left",booked:"Booked",cancelled:"Cancelled",noshow:"No-show"}[es];
+  var label={active:"Inside",done:"Left",booked:"Booked",cancelled:"Cancelled",noshow:"No-show",pending:"Awaiting payment",expired:"Expired"}[es];
   var h='<h2>'+esc(s.name)+'</h2><div class="kv"><span>Status</span><b>'+label+'</b><span>Station</span><b>'+esc(stationName(s.stationId))+'</b>'+
     '<span>Slot</span><b>'+fmtDate(s.startAt)+', '+fmtTime(s.startAt)+' to '+fmtTime(s.endsAt)+'</b>'+
-    (s.phone?'<span>Phone</span><b>'+esc(s.phone)+'</b>':'')+'<span>Players</span><b>'+s.players+'</b>'+(s.source==="online"?'<span>Booked</span><b>Online by customer</b>':'')+
+    (s.phone?'<span>Phone</span><b>'+esc(s.phone)+'</b>':'')+'<span>Players</span><b>'+s.players+'</b>'+(s.source==="online"?'<span>Booked</span><b>Online by customer</b>':'')+(s.paid?'<span>Paid online</span><b>'+money(s.amountPaid||0)+'</b>':'')+(s.paymentId?'<span>Payment ID</span><b>'+esc(s.paymentId)+'</b>':'')+
     (s.checkIn?'<span>Entry</span><b>'+fmtTime(s.checkIn)+'</b>':'')+(s.checkOut?'<span>Exit</span><b>'+fmtTime(s.checkOut)+'</b>':'')+
     (s.status==="done"?'<span>Paid</span><b>'+money(s.amount)+(s.pay?' ('+esc(s.pay)+')':'')+'</b>':'')+'</div><div class="actions">';
   h+='<button class="btn" data-act="mclose">Close</button>';
+  if(es==="pending")h+='<button class="btn danger" data-act="cancel" data-id="'+id+'">Release slot</button>';
   if(es==="booked")h+='<button class="btn danger" data-act="cancel" data-id="'+id+'">Cancel booking</button><button class="btn primary" data-act="in" data-id="'+id+'">Check in now</button>';
   if(es==="noshow")h+='<button class="btn danger" data-act="cancel" data-id="'+id+'">Clear no-show</button>';
   if(es==="active")h+='<button class="btn primary" data-act="out" data-id="'+id+'">Check out</button>';
@@ -1302,7 +1310,7 @@ function detailModal(id){
 /* ---------- CSV ---------- */
 function exportCsv(){
   var now=Date.now();
-  var rows=list().filter(function(s){var t=s.checkIn||s.startAt;return t>=logDate&&t<logDate+864e5&&s.status!=="cancelled";})
+  var rows=list().filter(function(s){var t=s.checkIn||s.startAt;return t>=logDate&&t<logDate+864e5&&s.status!=="cancelled"&&s.status!=="pending"&&s.status!=="expired";})
     .sort(function(a,b){return (a.checkIn||a.startAt)-(b.checkIn||b.startAt);});
   function q(v){v=String(v==null?"":v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}
   var lines=[["Guest","Phone","Players","Station","Slot start","Slot end","Entry","Exit","Minutes","Amount","Paid by","Status"].join(",")];
@@ -1326,7 +1334,7 @@ function onAct(e){
     case "book":bookModal(stid,null,dayStart(Date.now()));break;
     case "bookcell":bookModal(stid,parseInt(el.getAttribute("data-t"),10),slotDate);break;
     case "in":if(sessions[id]){closeModal();checkIn(sessions[id]);}break;
-    case "cancel":if(sessions[id]){closeModal();cancelBooking(sessions[id]);render();}break;
+    case "cancel":if(sessions[id]){var wasPaid=sessions[id].paid,paidAmt=sessions[id].amountPaid||0;closeModal();cancelBooking(sessions[id]);render();if(wasPaid)setTimeout(function(){toast("Cancelled. Remember to refund "+money(paidAmt)+" in your Razorpay dashboard.");},900);}break;
     case "out":closeModal();outModal(id);break;
     case "pause":if(sessions[id])pauseSession(sessions[id]);break;
     case "resume":if(sessions[id])resumeSession(sessions[id]);break;
@@ -1400,7 +1408,7 @@ function saveSetupInner(){
   config.currency=document.getElementById("c-cur").value.trim()||"\u20B9";
   config.lounge=document.getElementById("c-lounge").value.trim().slice(0,40);
   var obOn=document.getElementById("ob-on");
-  if(obOn){config.ob={on:obOn.value==="1",days:Math.max(1,Math.min(30,parseInt(document.getElementById("ob-days").value,10)||7)),notice:Math.max(0,Math.min(240,parseInt(document.getElementById("ob-notice").value,10)||0)),max:Math.max(10,Math.min(480,parseInt(document.getElementById("ob-max").value,10)||180))};}
+  if(obOn){config.ob={on:obOn.value==="1",days:Math.max(1,Math.min(30,parseInt(document.getElementById("ob-days").value,10)||7)),notice:Math.max(0,Math.min(240,parseInt(document.getElementById("ob-notice").value,10)||0)),max:Math.max(10,Math.min(480,parseInt(document.getElementById("ob-max").value,10)||180)),pay:document.getElementById("ob-pay").value==="1",city:document.getElementById("ob-city").value.trim().slice(0,60),address:document.getElementById("ob-addr").value.trim().slice(0,160),phone:document.getElementById("ob-phone").value.trim().slice(0,20)};}
   setupMsg={t:"Saving\u2026",c:""};
   saveConfig().then(function(){setupMsg={t:"Saved at "+fmtTime(Date.now())+".",c:"var(--free)"};toast("Setup saved.");if(tab==="setup")render();}).catch(function(e){setupMsg={t:"Not saved: "+((e&&(e.message||e.code))||"unknown error")+". Make sure you are signed in with edit access.",c:"var(--over)"};if(tab==="setup")render();});
   render();

@@ -53,7 +53,7 @@ select option{color:#000}
 .st span{font-size:13px;color:var(--muted)}
 .st[aria-pressed=true]{border-color:var(--accent2);box-shadow:0 0 0 2px rgba(0,209,255,.35)}
 .slots{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.slot{min-height:44px;border-radius:14px;border:1px solid var(--line);background:var(--card2);color:var(--ink);font:inherit;font-weight:600;cursor:pointer}
+.slot{min-height:44px;border-radius:14px;border:1px solid var(--line);background:var(--card2);color:var(--ink);font:inherit;font-weight:600;font-size:14px;white-space:nowrap;padding:0 2px;cursor:pointer}
 .slot:disabled{opacity:.3;text-decoration:line-through;cursor:not-allowed}
 .slot[aria-pressed=true]{background:var(--accent);border-color:var(--accent)}
 .row{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
@@ -82,37 +82,53 @@ var memStore={};
 function lsGet(k){try{var v=localStorage.getItem(k);return v==null?memStore[k]:v;}catch(e){return memStore[k];}}
 function lsSet(k,v){memStore[k]=v;try{localStorage.setItem(k,v);}catch(e){}}
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
-var app=document.getElementById("app"),toastEl=document.getElementById("toast"),toastT;
-function toast(m){toastEl.textContent=m;toastEl.classList.add("on");clearTimeout(toastT);toastT=setTimeout(function(){toastEl.classList.remove("on");},3200);}
+function $(id){return document.getElementById(id);}
+var app=$("app"),toastEl=$("toast"),toastT;
+function toast(m){toastEl.textContent=m;toastEl.classList.add("on");clearTimeout(toastT);toastT=setTimeout(function(){toastEl.classList.remove("on");},3800);}
 
 var qs=new URLSearchParams(location.search);
 var server=(qs.get("s")||"").replace(/\s+/g,"")||lsGet("ygl_book_server")||"";
 if(qs.get("s"))lsSet("ygl_book_server",server);
 
-var info=null,skew=0,auth=null,mode="login",day=0,stationId="",busy=[],selStart=0,bookings=[],done=null,loading=true,fatal="";
+var branches=[],branchSlug=lsGet("ygl_book_branch")||qs.get("b")||"",info=null,skew=0,auth=null,mode="login";
+var day=0,stationId="",busy=[],selStart=0,bookings=[],done=null,loading=true,fatal="",busyMsg="",notice="",payPending=null,tickT=null;
 try{auth=JSON.parse(lsGet("ygl_book_auth")||"null");}catch(e){auth=null;}
 
 function nowMs(){return Date.now()+skew;}
 function dayStart(ms){var d=new Date(ms);d.setHours(0,0,0,0);return d.getTime();}
 function fmtT(ms){return new Date(ms).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});}
 function fmtD(ms){return new Date(ms).toLocaleDateString([],{weekday:"short",day:"numeric",month:"short"});}
-function money(n){return (info.currency||"")+Math.round(n).toLocaleString();}
+function money(n){return (info&&info.currency||"")+Math.round(n).toLocaleString();}
 function dur(min){var h=Math.floor(min/60),m=min%60;return h?(h+"h"+(m?" "+m+"m":"")):(m+"m");}
-function stationBy(id){var r=null;info.stations.forEach(function(s){if(s.id===id)r=s;});return r;}
+function stationBy(id){var r=null;if(info)info.stations.forEach(function(s){if(s.id===id)r=s;});return r;}
+function mmss(ms){ms=Math.max(0,ms);var s=Math.floor(ms/1000);return Math.floor(s/60)+":"+("0"+(s%60)).slice(-2);}
 
 function post(p){
   if(!server)return Promise.reject(new Error("noserver"));
-  var ctl=typeof AbortController!=="undefined"?new AbortController():null,t=ctl?setTimeout(function(){ctl.abort();},25000):0;
+  if(branchSlug&&p.branch===undefined)p.branch=branchSlug;
+  var ctl=typeof AbortController!=="undefined"?new AbortController():null,t=ctl?setTimeout(function(){ctl.abort();},30000):0;
   return fetch(server,{method:"POST",body:JSON.stringify(p),signal:ctl?ctl.signal:undefined}).then(function(r){clearTimeout(t);if(!r.ok)throw new Error("Server error "+r.status);return r.json();})
    .catch(function(e){clearTimeout(t);throw new Error(e&&e.name==="AbortError"?"Timed out":((e&&e.message)||"offline"));});
 }
 function netMsg(e){var m=(e&&e.message)||"";return /failed to fetch|networkerror|load failed|timed out|offline/i.test(m)?"Could not reach the lounge. Check your internet and try again.":m;}
+function who(){return {phone:auth.phone,token:auth.token};}
+function withAuth(o){o.phone=auth.phone;o.token=auth.token;return o;}
 
+/* ---------- data ---------- */
+function loadBranches(){
+  return post({action:"c_branches",branch:""}).then(function(r){
+    branches=(r&&r.branches)||[];
+    if(branches.length===1)branchSlug=branches[0].slug;
+    else if(branchSlug){var ok=false;branches.forEach(function(b){if(b.slug===branchSlug)ok=true;});if(!ok)branchSlug="";}
+    if(branchSlug)lsSet("ygl_book_branch",branchSlug);
+  });
+}
 function loadInfo(){
+  if(!branchSlug)return Promise.resolve();
   return post({action:"c_info"}).then(function(r){
     if(!r.ok){fatal=r.error||"Booking is not available right now.";return;}
     info=r;skew=r.now-Date.now();fatal="";
-    if(!stationId)stationId=info.stations[0].id;
+    if(!stationId||!stationBy(stationId))stationId=info.stations[0].id;
     if(!day)day=dayStart(nowMs());
   });
 }
@@ -121,40 +137,61 @@ function loadBusy(){
   return post({action:"c_avail",from:day,to:day+86400000}).then(function(r){if(r.ok){busy=r.busy||[];skew=r.now-Date.now();}});
 }
 function loadMine(){
-  if(!auth)return Promise.resolve();
-  return post({action:"c_my",phone:auth.phone,token:auth.token}).then(function(r){
+  if(!auth||!info)return Promise.resolve();
+  return post(withAuth({action:"c_my"})).then(function(r){
     if(r.auth){logoutLocal();return;}
-    if(r.ok)bookings=r.bookings||[];
+    if(r.ok){bookings=r.bookings||[];skew=r.now-Date.now();}
   });
 }
-function logoutLocal(){auth=null;lsSet("ygl_book_auth","null");bookings=[];selStart=0;done=null;render();}
-
+function refreshAll(){return Promise.all([loadBusy(),loadMine()]).then(render);}
+function logoutLocal(){auth=null;lsSet("ygl_book_auth","null");bookings=[];selStart=0;done=null;payPending=null;render();}
 function setAuth(r){auth={phone:r.phone,token:r.token,name:r.name};lsSet("ygl_book_auth",JSON.stringify(auth));}
 
 /* ---------- views ---------- */
+function branchLine(){
+  var b=null;branches.forEach(function(x){if(x.slug===branchSlug)b=x;});
+  if(!b&&info)b=info.branch;
+  return b?[b.city,b.address].filter(Boolean).join(" \u2022 "):"";
+}
 function header(){
-  var lounge=info&&info.lounge?info.lounge:"Book a slot";
-  return '<header><img src="icon-192.png" alt="" onerror="this.style.display=\'none\'"><div><h1>'+esc(lounge)+'</h1><div class="sub">Book your gaming slot</div></div>'+
+  var title="Book a slot",b=null;
+  branches.forEach(function(x){if(x.slug===branchSlug)b=x;});
+  if(info&&info.lounge)title=info.lounge;else if(b&&b.name)title=b.name;else if(branches.length===1&&branches[0].name)title=branches[0].name;
+  var sub=branchLine()||"Book your gaming slot";
+  return '<header><img src="icon-192.png" alt="" onerror="this.style.display=\'none\'"><div><h1>'+esc(title)+'</h1><div class="sub">'+esc(sub)+'</div></div>'+
     (auth?'<button class="btn sm out" id="logout">Log out</button>':'')+'</header>';
 }
 function render(){
+  clearInterval(tickT);
   if(loading){app.innerHTML='<div class="card"><p class="muted">Loading&hellip;</p></div>';return;}
   if(!server){app.innerHTML='<div class="card"><h2>Booking link needed</h2><p class="muted">Please open the booking link or scan the QR code given by the lounge.</p></div>';return;}
-  if(fatal){app.innerHTML=header()+'<div class="card"><h2>Booking unavailable</h2><p class="muted">'+esc(fatal)+'</p><button class="btn block" id="retry">Try again</button></div>';bind();return;}
-  if(!info.on){app.innerHTML=header()+'<div class="card"><h2>Online booking is off</h2><p class="muted">Please visit the lounge to book a slot.</p></div>';return;}
+  if(busyMsg){app.innerHTML=header()+'<div class="card done"><div class="big">&#8987;</div><h2>'+esc(busyMsg)+'</h2><p class="muted">Please do not close this page.</p></div>';return;}
+  if(!branches.length){app.innerHTML=header()+'<div class="card"><h2>No branches available</h2><p class="muted">'+esc(fatal||"Online booking is not open right now. Please try again later.")+'</p><button class="btn block" id="retry">Try again</button></div>';bind();return;}
   if(!auth){app.innerHTML=header()+authCard();bind();return;}
-  app.innerHTML=header()+(done?doneCard():'')+bookCard()+mineCard();
+  if(!branchSlug){app.innerHTML=header()+branchCard();bind();return;}
+  if(fatal||!info){app.innerHTML=header()+'<div class="card"><h2>Booking unavailable</h2><p class="muted">'+esc(fatal||"Please try again.")+'</p><button class="btn block" id="retry">Try again</button></div>'+footer();bind();return;}
+  if(!info.on){app.innerHTML=header()+'<div class="card"><h2>Online booking is off</h2><p class="muted">'+esc(info.msg||"Please visit the lounge to book a slot.")+'</p></div>'+footer();bind();return;}
+  app.innerHTML=header()+(notice?'<div class="card"><p>'+esc(notice)+'</p></div>':'')+(done?doneCard():'')+(payPending?payCard():'')+bookCard()+mineCard()+footer();
   bind();
+  if(payPending||bookings.some(function(b){return b.status==="pending";}))tickT=setInterval(tick,1000);
+}
+function footer(){
+  return '<div class="card muted" style="font-size:13px">'+(branches.length>1?'<button class="btn sm" id="chg-branch">Change branch</button> ':'')+'<button class="btn sm danger" id="del-acc">Delete my account</button></div>';
 }
 function authCard(){
   var reg=mode==="register";
-  return '<div class="card"><div class="tabs"><button class="btn" data-mode="login" aria-pressed="'+(!reg)+'">Log in</button><button class="btn" data-mode="register" aria-pressed="'+reg+'">Register</button></div>'+
+  return '<div class="card"><div class="tabs"><button class="btn" data-mode="login" aria-pressed="'+(!reg)+'">Log in</button><button class="btn" data-mode="register" aria-pressed="'+reg+'">Sign up</button></div>'+
     (reg?'<label>Your name<input id="f-name" autocomplete="name" maxlength="40" placeholder="e.g. Ravi Kumar"></label>':'')+
     '<label>Mobile number<input id="f-phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="e.g. 98765 43210"></label>'+
     '<label>PIN (4 to 6 digits)<input id="f-pin" type="password" inputmode="numeric" maxlength="6" autocomplete="'+(reg?"new-password":"current-password")+'" placeholder="Choose a PIN you will remember"></label>'+
     '<div class="err" id="f-err"></div>'+
-    '<button class="btn primary block" id="f-go">'+(reg?"Register and continue":"Log in")+'</button>'+
-    '<p class="muted" style="margin-top:12px">'+(reg?"Your number is used only by this lounge for your bookings.":"New here? Tap Register. Forgot your PIN? Ask the lounge to reset it.")+'</p></div>';
+    '<button class="btn primary block" id="f-go">'+(reg?"Sign up and continue":"Log in")+'</button>'+
+    '<p class="muted" style="margin-top:12px">'+(reg?"Your name and number are used only to manage your bookings.":"New here? Tap Sign up. Forgot your PIN? Ask the lounge to reset it.")+'</p></div>';
+}
+function branchCard(){
+  var h='<div class="card"><h2>Choose a branch</h2>';
+  branches.forEach(function(b){h+='<button class="st" style="width:100%;margin-bottom:8px" data-branch="'+esc(b.slug)+'"><b>'+esc(b.name||"Branch")+'</b><span>'+esc([b.city,b.address].filter(Boolean).join(" \u2022 "))+'</span></button>';});
+  return h+'</div>';
 }
 function dayChips(){
   var h='<div class="chips">';
@@ -183,9 +220,9 @@ function maxLens(t){
 }
 function bookCard(){
   var st=stationBy(stationId);
-  var h='<div class="card"><h2>Book a slot</h2>'+dayChips()+'<label style="margin-top:6px">Choose a station</label><div class="stations">';
+  var h='<div class="card"><h2>Check slots and book</h2>'+dayChips()+'<label style="margin-top:6px">Choose a station</label><div class="stations">';
   info.stations.forEach(function(s){h+='<button class="st" data-st="'+esc(s.id)+'" aria-pressed="'+(s.id===stationId)+'"><b>'+esc(s.name)+'</b><span>'+money(s.rate)+' per hour</span></button>';});
-  h+='</div><label>Start time</label><div class="slots">';
+  h+='</div><label>Start time <span class="muted">(greyed slots are taken)</span></label><div class="slots">';
   var any=false;
   for(var t=day+info.open*3600000;t+info.slotMin*60000<=day+info.close*3600000;t+=info.slotMin*60000){
     var free=slotFree(t);if(free)any=true;
@@ -198,46 +235,117 @@ function bookCard(){
     else{
       h+='<label>How long</label><select id="b-len">'+lens.map(function(l){return '<option value="'+l+'">'+dur(l)+'</option>';}).join("")+'</select>'+
         '<label>Players</label><select id="b-pl">'+[1,2,3,4,5,6].map(function(n){return '<option value="'+n+'">'+n+'</option>';}).join("")+'</select>'+
-        '<div class="row" style="margin-top:12px"><span class="muted">Estimated price</span><span class="total" id="b-est"></span></div>'+
-        '<div class="err" id="b-err"></div><button class="btn primary block" id="b-go">Book '+esc(st.name)+' at '+fmtT(selStart)+'</button>'+
-        '<p class="muted" style="margin-top:10px">Pay at the counter. Please arrive on time.</p>';
+        '<div class="row" style="margin-top:12px"><span class="muted">'+(info.payRequired?'You pay now':'Estimated price')+'</span><span class="total" id="b-est"></span></div>'+
+        '<div class="err" id="b-err"></div><button class="btn primary block" id="b-go">'+(info.payRequired?'Pay and book ':'Book ')+esc(st.name)+' at '+fmtT(selStart)+'</button>'+
+        '<p class="muted" style="margin-top:10px">'+(info.payRequired?'Secure online payment (UPI or card). Your slot is held for '+info.holdMin+' minutes while you pay. It is confirmed only after payment.':'Pay at the counter. Please arrive on time.')+'</p>';
     }
   }
   return h+'</div>';
+}
+function payCard(){
+  var s=stationBy(payPending.stationId);
+  return '<div class="card"><h2>Complete your payment</h2><p><b>'+esc(s?s.name:"")+'</b><br>'+fmtD(payPending.startAt)+', '+fmtT(payPending.startAt)+' to '+fmtT(payPending.endsAt)+'</p>'+
+    '<p class="muted">Slot held for <b id="hold-left"></b></p><div class="err" id="p-err"></div>'+
+    '<button class="btn primary block" id="pay-now">Pay '+money(payPending.amount)+'</button><button class="btn block" id="pay-release">Release this slot</button></div>';
+}
+function statusPill(b){
+  if(b.status==="booked")return '<span class="pill">'+(b.paid?"Confirmed \u2022 Paid":"Booked")+'</span>';
+  if(b.status==="pending")return '<span class="pill active">Awaiting payment</span>';
+  if(b.status==="active")return '<span class="pill active">Playing</span>';
+  return '<span class="pill cancelled">'+esc(b.status==="cancelled"?"Cancelled":b.status)+'</span>';
 }
 function mineCard(){
   var h='<div class="card"><h2>My bookings</h2>';
   var list=bookings.filter(function(b){return b.status!=="cancelled"||b.endsAt>nowMs()-86400000;});
   if(!list.length)return h+'<p class="muted">You have no bookings yet.</p></div>';
+  var phone=info&&info.branch&&info.branch.phone,paidNote=false;
   list.forEach(function(b){
-    var s=stationBy(b.stationId),can=b.status==="booked"&&b.startAt>nowMs();
-    h+='<div class="bk"><div class="row"><div><b>'+esc(s?s.name:"Station")+'</b><div class="muted">'+fmtD(b.startAt)+', '+fmtT(b.startAt)+' to '+fmtT(b.endsAt)+' &bull; '+b.players+(b.players>1?' players':' player')+'</div></div><span class="pill '+esc(b.status)+'">'+({booked:"Booked",active:"Playing",cancelled:"Cancelled"}[b.status]||esc(b.status))+'</span></div>'+
-      (can?'<button class="btn sm danger" style="margin-top:8px" data-cancel="'+esc(b.id)+'">Cancel booking</button>':'')+'</div>';
+    var s=stationBy(b.stationId),future=b.startAt>nowMs();
+    h+='<div class="bk"><div class="row"><div><b>'+esc(s?s.name:"Station")+'</b><div class="muted">'+fmtD(b.startAt)+', '+fmtT(b.startAt)+' to '+fmtT(b.endsAt)+' &bull; '+b.players+(b.players>1?' players':' player')+(b.paid?' &bull; '+money(b.amount):'')+'</div></div>'+statusPill(b)+'</div>';
+    if(b.status==="pending")h+='<div class="muted" style="margin-top:6px">Held for <b data-hold="'+b.holdUntil+'"></b></div><div class="row" style="margin-top:8px;justify-content:flex-start"><button class="btn sm primary" data-repay="'+esc(b.id)+'">Pay now</button><button class="btn sm danger" data-cancel="'+esc(b.id)+'">Release</button></div>';
+    else if(b.status==="booked"&&!b.paid&&future)h+='<button class="btn sm danger" style="margin-top:8px" data-cancel="'+esc(b.id)+'">Cancel booking</button>';
+    else if(b.status==="booked"&&b.paid&&future)paidNote=true;
+    h+='</div>';
   });
+  if(paidNote)h+='<p class="muted" style="margin-top:8px">Paid bookings cannot be cancelled here. To change one, please contact the branch'+(phone?': <a style="color:var(--accent2)" href="tel:'+esc(phone)+'">'+esc(phone)+'</a>':'')+'.</p>';
   return h+'</div>';
 }
 function doneCard(){
   var s=stationBy(done.stationId);
-  return '<div class="card done"><div class="big">&#127918;</div><h2>You are booked!</h2><p><b>'+esc(s?s.name:"")+'</b><br>'+fmtD(done.startAt)+', '+fmtT(done.startAt)+' to '+fmtT(done.endsAt)+'</p><p class="muted">Show your name and mobile number at the counter. Pay there.</p><button class="btn sm" id="done-ok">OK</button></div>';
+  return '<div class="card done"><div class="big">&#127918;</div><h2>You are booked!</h2><p><b>'+esc(s?s.name:"")+'</b><br>'+fmtD(done.startAt)+', '+fmtT(done.startAt)+' to '+fmtT(done.endsAt)+'</p><p class="muted">'+(done.paid?'Payment received. Show your name and mobile number at the counter.':'Show your name and mobile number at the counter and pay there.')+'</p><button class="btn sm" id="done-ok">OK</button></div>';
+}
+function tick(){
+  var now=nowMs(),el=$("hold-left");
+  if(payPending&&el){var left=payPending.holdUntil-now;el.textContent=left>0?mmss(left):"0:00";if(left<=-60000){payPending=null;refreshAll();}}
+  var els=app.querySelectorAll("[data-hold]");
+  for(var i=0;i<els.length;i++){var l=parseInt(els[i].getAttribute("data-hold"),10)-now;els[i].textContent=l>0?mmss(l):"expired";}
+}
+
+/* ---------- payment ---------- */
+function loadRzp(){
+  return new Promise(function(res,rej){
+    if(window.Razorpay)return res();
+    var s=document.createElement("script");s.src="https://checkout.razorpay.com/v1/checkout.js";
+    s.onload=res;s.onerror=function(){rej(new Error("Could not open the payment window. Check your internet."));};
+    document.head.appendChild(s);
+  });
+}
+function openPay(pay,booking){
+  return loadRzp().then(function(){
+    payPending=booking;render();
+    var rz=new window.Razorpay({key:pay.keyId,amount:pay.amount,currency:pay.currency,name:pay.name,description:pay.description,order_id:pay.orderId,
+      prefill:{name:auth.name,contact:auth.phone},theme:{color:"#7C6CFF"},
+      handler:function(resp){confirmPay(booking.id,resp);},
+      modal:{ondismiss:function(){if(!busyMsg){render();}}}});
+    rz.on("payment.failed",function(r){toast((r&&r.error&&r.error.description)||"Payment failed. You can try again.");});
+    rz.open();
+  });
+}
+function confirmPay(id,resp){
+  busyMsg="Confirming your payment\u2026";render();
+  post(withAuth({action:"c_pay_confirm",id:id,razorpay_payment_id:resp.razorpay_payment_id,razorpay_order_id:resp.razorpay_order_id,razorpay_signature:resp.razorpay_signature})).then(function(r){
+    busyMsg="";
+    if(r.ok){done=r.booking;payPending=null;notice="";}
+    else{payPending=null;notice=r.error||"We could not confirm the payment.";}
+    return refreshAll().then(function(){window.scrollTo(0,0);});
+  }).catch(function(e){
+    busyMsg="";payPending=null;
+    notice="Your payment was received. Your booking will be confirmed automatically within a minute. Please check My bookings.";
+    setTimeout(function(){refreshAll();},20000);
+    render();
+  });
+}
+function startRepay(id){
+  post(withAuth({action:"c_repay",id:id})).then(function(r){
+    if(r.auth){logoutLocal();return;}
+    if(!r.ok){toast(r.error||"Could not continue.");return refreshAll();}
+    return openPay(r.pay,r.booking);
+  }).catch(function(e){var el=$("p-err");if(el)el.textContent=netMsg(e);else toast(netMsg(e));});
 }
 
 /* ---------- events ---------- */
-function $(id){return document.getElementById(id);}
 function bind(){
   var q=function(sel,fn){var els=app.querySelectorAll(sel);for(var i=0;i<els.length;i++)(function(el){el.addEventListener("click",function(){fn(el);});})(els[i]);};
   q("#retry",function(){loading=true;render();start();});
-  q("#logout",function(){if(auth)post({action:"c_logout",phone:auth.phone,token:auth.token}).catch(function(){});logoutLocal();});
+  q("#logout",function(){if(auth)post(withAuth({action:"c_logout"})).catch(function(){});logoutLocal();});
   q("[data-mode]",function(el){mode=el.getAttribute("data-mode");render();});
+  q("[data-branch]",function(el){branchSlug=el.getAttribute("data-branch");lsSet("ygl_book_branch",branchSlug);info=null;day=0;loading=true;render();start();});
+  q("#chg-branch",function(){branchSlug="";lsSet("ygl_book_branch","");info=null;day=0;selStart=0;render();});
+  q("#del-acc",deleteAccount);
   if($("f-go"))$("f-go").addEventListener("click",doAuth);
   q("[data-day]",function(el){day=parseInt(el.getAttribute("data-day"),10);selStart=0;done=null;loadBusy().then(render).catch(function(e){toast(netMsg(e));});});
   q("[data-st]",function(el){stationId=el.getAttribute("data-st");selStart=0;render();});
   q("[data-t]",function(el){selStart=parseInt(el.getAttribute("data-t"),10);render();var g=$("b-go");if(g&&g.scrollIntoView)g.scrollIntoView({behavior:"smooth",block:"center"});});
   q("[data-cancel]",function(el){cancelBooking(el.getAttribute("data-cancel"));});
+  q("[data-repay]",function(el){startRepay(el.getAttribute("data-repay"));});
+  q("#pay-now",function(){startRepay(payPending.id);});
+  q("#pay-release",function(){cancelBooking(payPending.id);});
   q("#done-ok",function(){done=null;render();});
   var len=$("b-len"),pl=$("b-pl");
   function est(){var e=$("b-est");if(!e||!len)return;var st=stationBy(stationId),n=info.perPlayer?parseInt(pl.value,10):1;e.textContent=money(st.rate*parseInt(len.value,10)/60*n);}
   if(len){len.addEventListener("change",est);pl.addEventListener("change",est);est();}
   if($("b-go"))$("b-go").addEventListener("click",doBook);
+  tick();
 }
 function doAuth(){
   var reg=mode==="register",err=$("f-err"),go=$("f-go");
@@ -247,33 +355,44 @@ function doAuth(){
   if(!/^\d{4,6}$/.test(pin)){err.textContent="PIN must be 4 to 6 digits.";return;}
   err.textContent="";go.disabled=true;go.textContent="Please wait\u2026";
   post(reg?{action:"c_register",name:name,phone:phone,pin:pin}:{action:"c_login",phone:phone,pin:pin}).then(function(r){
-    if(!r.ok){go.disabled=false;go.textContent=reg?"Register and continue":"Log in";err.textContent=r.error||"Something went wrong.";return;}
-    setAuth(r);return Promise.all([loadBusy(),loadMine()]).then(function(){render();toast("Welcome, "+r.name+"!");});
-  }).catch(function(e){go.disabled=false;go.textContent=reg?"Register and continue":"Log in";err.textContent=netMsg(e);});
+    if(!r.ok){go.disabled=false;go.textContent=reg?"Sign up and continue":"Log in";err.textContent=r.error||"Something went wrong.";return;}
+    setAuth(r);loading=true;render();start();toast("Welcome, "+r.name+"!");
+  }).catch(function(e){go.disabled=false;go.textContent=reg?"Sign up and continue":"Log in";err.textContent=netMsg(e);});
 }
 function doBook(){
   var err=$("b-err"),go=$("b-go"),len=parseInt($("b-len").value,10),pl=parseInt($("b-pl").value,10);
-  err.textContent="";go.disabled=true;go.textContent="Booking\u2026";
-  post({action:"c_book",phone:auth.phone,token:auth.token,stationId:stationId,start:selStart,end:selStart+len*60000,players:pl}).then(function(r){
+  err.textContent="";go.disabled=true;go.textContent="Please wait\u2026";
+  post(withAuth({action:"c_book",stationId:stationId,start:selStart,end:selStart+len*60000,players:pl})).then(function(r){
     if(r.auth){toast("Please log in again.");logoutLocal();return;}
-    if(!r.ok){go.disabled=false;go.textContent="Book";err.textContent=r.error||"Could not book.";if(r.taken){selStart=0;return loadBusy().then(render);}return;}
-    done=r.booking;selStart=0;return Promise.all([loadBusy(),loadMine()]).then(function(){render();window.scrollTo(0,0);});
-  }).catch(function(e){go.disabled=false;go.textContent="Book";err.textContent=netMsg(e);});
+    if(!r.ok){go.disabled=false;go.textContent="Try again";err.textContent=r.error||"Could not book.";if(r.taken){selStart=0;return loadBusy().then(render);}return;}
+    selStart=0;
+    if(r.pay){return loadBusy().then(function(){return openPay(r.pay,r.booking);}).then(function(){});}
+    done=r.booking;return refreshAll().then(function(){window.scrollTo(0,0);});
+  }).catch(function(e){go.disabled=false;go.textContent="Try again";err.textContent=netMsg(e);});
 }
 function cancelBooking(id){
-  if(!confirm("Cancel this booking?"))return;
-  post({action:"c_cancel",phone:auth.phone,token:auth.token,id:id}).then(function(r){
+  if(!confirm("Release or cancel this booking?"))return;
+  post(withAuth({action:"c_cancel",id:id})).then(function(r){
     if(r.auth){logoutLocal();return;}
-    toast(r.ok?"Booking cancelled.":(r.error||"Could not cancel."));
-    return Promise.all([loadBusy(),loadMine()]).then(render);
+    if(payPending&&payPending.id===id)payPending=null;
+    toast(r.ok?"Done.":(r.error||"Could not cancel."));
+    return refreshAll();
+  }).catch(function(e){toast(netMsg(e));});
+}
+function deleteAccount(){
+  var pin=prompt("To delete your account, enter your PIN. Your name and number will be removed. Booking and payment records are kept for accounting.");
+  if(pin===null)return;
+  post(withAuth({action:"c_delete",pin:String(pin).trim()})).then(function(r){
+    if(r.ok){toast("Your account has been deleted.");logoutLocal();}else toast(r.error||"Could not delete the account.");
   }).catch(function(e){toast(netMsg(e));});
 }
 function start(){
   if(!server){loading=false;render();return;}
-  loadInfo().then(function(){return info?Promise.all([loadBusy(),loadMine()]):null;}).then(function(){loading=false;render();})
+  loadBranches().then(function(){return loadInfo();}).then(function(){return info&&auth?Promise.all([loadBusy(),loadMine()]):null;})
+   .then(function(){loading=false;render();})
    .catch(function(e){loading=false;fatal=netMsg(e);render();});
 }
-setInterval(function(){if(auth&&info&&!document.hidden&&!selStart&&!done){Promise.all([loadBusy(),loadMine()]).then(render).catch(function(){});}},60000);
+setInterval(function(){if(auth&&info&&!document.hidden&&!selStart&&!done&&!busyMsg){refreshAll().catch(function(){});}},60000);
 start();
 })();
 </script>
